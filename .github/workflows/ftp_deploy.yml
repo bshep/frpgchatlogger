@@ -1,0 +1,39 @@
+name: Deploy to FTP
+
+on:
+  push:
+    branches:
+      - main # Set this to your production branch
+
+jobs:
+  web-deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+    - name: Get latest code
+      uses: actions/checkout@v3
+
+    - name: Sync files
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      with:
+        server: ${{ secrets.FTP_SERVER }}
+        username: ${{ secrets.FTP_USER }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        server-dir: /htdocs/chatlogger/ # Target directory on your server
+        dry-run: false # Set to false to actually deploy
+        exclude: |
+          .DS_Store
+          .env
+          **/.git*
+          **/.git*/**
+          **/node_modules/**
+          **/venv/**
+          **/.vscode/**
+          .github/**
+          .gitignore
+          README.md
+          *.py
+          version.txt
+          ftp_config.json
+          .htpasswd
+          items.json
