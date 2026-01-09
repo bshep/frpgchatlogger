@@ -29,11 +29,10 @@ jobs:
           **/node_modules/**
           **/venv/**
           **/.vscode/**
+          **/docs/**
+          **/sample_data/**
           .github/**
           .gitignore
           README.md
           *.py
-          version.txt
-          ftp_config.json
           .htpasswd
-          items.json
