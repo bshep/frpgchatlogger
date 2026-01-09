@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FRPG Chat Logger</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <div id="app">
+      <h1>FRPG Chat Logger</h1>
+
+      <div class="tabs">
+        <button class="tab-button active" onclick="openTab(event, 'chat-tab')">Chat Log</button>
+        <button class="tab-button" onclick="openTab(event, 'mentions-tab')">Mentions</button>
+        <button class="tab-button" onclick="openTab(event, 'config-tab')">Configuration</button>
+      </div>
+
+      <div id="chat-tab" class="tab-content active">
+        <h2>Trade Channel Chat</h2>
+        <div id="chat-log" class="log-container"></div>
+      </div>
+
+      <div id="mentions-tab" class="tab-content">
+        <h2>Your Mentions</h2>
+        <button id="clear-mentions">Clear Mentions</button>
+        <div id="mentions-log" class="log-container"></div>
+      </div>
+
+      <div id="config-tab" class="tab-content">
+        <h2>Configuration</h2>
+        <form id="config-form">
+          <label for="username">Your Username:</label>
+          <input type="text" id="username" name="username" value="SuperJ">
+          <small>Used to detect mentions (e.g., @SuperJ)</small><br><br>
+
+          <label for="channel">Chat Channel:</label>
+          <input type="text" id="channel" name="channel" value="trade">
+          <small>The FarmRPG chat channel to monitor</small><br><br>
+
+          <label for="polling-interval">Polling Interval (seconds):</label>
+          <input type="number" id="polling-interval" name="polling_interval" value="30">
+          <small>How often the chat log is fetched</small><br><br>
+
+          <label for="play-alert">Play Alert on Mention:</label>
+          <input type="checkbox" id="play-alert" name="play_alert" checked>
+          <br><br>
+
+          <button type="submit">Save Configuration</button>
+        </form>
+      </div>
+    </div>
+    <script type="module" src="/main.js"></script>
+    <audio id="mention-sound" src="/mention.mp3" preload="auto"></audio>
+  </body>
+</html>
