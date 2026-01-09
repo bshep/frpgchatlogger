@@ -111,7 +111,7 @@ async function fetchChatLog() {
     const response = await fetch(`${BACKEND_URL}/api/messages?limit=200&channel=${currentUserConfig.channel}`);
     const messages = await response.json();
     CHAT_LOG_ELEMENT.innerHTML = ''; // Clear existing
-    messages.reverse().forEach(msg => { // Display oldest first
+    messages.forEach(msg => { // Most recent first
       const messageElement = document.createElement('div');
       messageElement.classList.add('chat-message');
       
@@ -123,7 +123,7 @@ async function fetchChatLog() {
       `;
       CHAT_LOG_ELEMENT.appendChild(messageElement);
     });
-    CHAT_LOG_ELEMENT.scrollTop = CHAT_LOG_ELEMENT.scrollHeight; // Auto-scroll to bottom
+    CHAT_LOG_ELEMENT.scrollTop = 0; // Auto-scroll to top
   } catch (error) {
     console.error("Error fetching chat log:", error);
     CHAT_LOG_ELEMENT.innerHTML = '<p>Error loading chat log.</p>';
@@ -143,7 +143,7 @@ async function fetchMentions() {
     }
 
     MENTIONS_LOG_ELEMENT.innerHTML = ''; // Clear existing
-    mentions.reverse().forEach(mention => { // Display oldest first
+    mentions.forEach(mention => { // Most recent first
       const mentionElement = document.createElement('div');
       mentionElement.classList.add('mention-message');
       const timestamp = new Date(mention.timestamp).toLocaleTimeString();
@@ -154,7 +154,7 @@ async function fetchMentions() {
       `;
       MENTIONS_LOG_ELEMENT.appendChild(mentionElement);
     });
-    MENTIONS_LOG_ELEMENT.scrollTop = MENTIONS_LOG_ELEMENT.scrollHeight; // Auto-scroll to bottom
+    MENTIONS_LOG_ELEMENT.scrollTop = 0; // Auto-scroll to top
   } catch (error) {
     console.error("Error fetching mentions:", error);
     MENTIONS_LOG_ELEMENT.innerHTML = '<p>Error loading mentions.</p>';
