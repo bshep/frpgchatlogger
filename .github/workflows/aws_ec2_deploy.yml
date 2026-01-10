@@ -28,18 +28,6 @@ jobs:
         cd frontend
         npm run build
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9' # Use a Python version compatible with your backend
-
-    - name: Install Backend Dependencies
-      run: |
-        python -m venv venv_backend
-        source venv_backend/bin/activate
-        pip install -r backend/requirements.txt
-        deactivate
-
     - name: Deploy to EC2
       env:
         SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
