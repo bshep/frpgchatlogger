@@ -20,7 +20,7 @@ jobs:
         username: ${{ secrets.FTP_USER }}
         password: ${{ secrets.FTP_PASSWORD }}
         server-dir: /htdocs/chatlogger/ # Target directory on your server
-        dry-run: false # Set to false to actually deploy
+        dry-run: true # Set to false to actually deploy
         exclude: |
           .DS_Store
           .env
