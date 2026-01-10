@@ -1,36 +1,25 @@
+import 'bootstrap/dist/css/bootstrap.min.css';
+import 'bootstrap';
+
 const BACKEND_URL = "http://localhost:8000";
 const CHAT_LOG_ELEMENT = document.getElementById('chat-log');
 const MENTIONS_LOG_ELEMENT = document.getElementById('mentions-log');
 const CONFIG_FORM = document.getElementById('config-form');
-const CLEAR_MENTIONS_BUTTON = document.getElementById('clear-mentions');
 const MENTION_SOUND = document.getElementById('mention-sound');
 
 let currentUserConfig = {
-  username: "SuperJ", // Default, will be overwritten by localStorage or backend
-  channel: "trade",    // Default
-  play_alert: true,    // Default
-  polling_interval: 30 // Default
+  username: "SuperJ",
+  channel: "trade",
+  play_alert: true,
+  polling_interval: 30
 };
 
-// --- Tab Functionality ---
-window.openTab = (evt, tabName) => {
-  let tabContents = document.getElementsByClassName("tab-content");
-  for (let i = 0; i < tabContents.length; i++) {
-    tabContents[i].style.display = "none";
-  }
-  let tabButtons = document.getElementsByClassName("tab-button");
-  for (let i = 0; i < tabButtons.length; i++) {
-    tabButtons[i].className = tabButtons[i].className.replace(" active", "");
-  }
-  document.getElementById(tabName).style.display = "block";
-  evt.currentTarget.className += " active";
-};
+let localMentionsCache = []; // Initialize local cache for mentions
 
-// Open default tab on load
+// On DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
-  document.querySelector('.tab-button').click();
   loadConfigFromLocalStorage();
-  fetchBackendConfig(); // Fetch initial config from backend and sync
+  fetchBackendConfig();
   startPolling();
 
   // Attempt to "unlock" audio context on first user interaction
@@ -38,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (MENTION_SOUND.paused) {
       MENTION_SOUND.play().then(() => {
         MENTION_SOUND.pause();
-        MENTION_SOUND.currentTime = 0; // Reset for next play
+        MENTION_SOUND.currentTime = 0;
       }).catch(error => {
         console.warn("Audio autoplay prevented, user interaction needed:", error);
       });
@@ -60,6 +49,16 @@ function loadConfigFromLocalStorage() {
     document.getElementById('channel').value = currentUserConfig.channel;
     document.getElementById('polling-interval').value = currentUserConfig.polling_interval;
     document.getElementById('play-alert').checked = currentUserConfig.play_alert;
+  }
+
+  const storedMentions = localStorage.getItem('localMentionsCache');
+  if (storedMentions) {
+    localMentionsCache = JSON.parse(storedMentions);
+    // Ensure timestamps are Date objects and is_hidden property exists
+    localMentionsCache.forEach(m => {
+      m.timestamp = new Date(m.timestamp);
+      m.is_hidden = m.is_hidden || false; // Ensure is_hidden is set for old entries
+    });
   }
 }
 
@@ -90,14 +89,24 @@ CONFIG_FORM.addEventListener('submit', async (e) => {
     play_alert: formData.get('play_alert') === 'on' ? true : false,
   };
 
+  const oldUsername = currentUserConfig.username;
+
   currentUserConfig = newConfig;
   localStorage.setItem('userConfig', JSON.stringify(currentUserConfig));
+
+  // If username changed, clear local cache and re-fetch all mentions for the new user
+  if (oldUsername !== newConfig.username) {
+    localMentionsCache = [];
+    localStorage.removeItem('localMentionsCache');
+    // Also re-fetch mentions immediately for the new user
+    fetchMentions();
+  }
 
   // Update backend config for channel ONLY
   try {
     await fetch(`${BACKEND_URL}/api/config?key=channel&value=${newConfig.channel}`, { method: 'POST' });
     alert('Configuration saved!');
-    restartPolling();
+    restartPolling(); // Restart polling to use new interval or channel
   } catch (error) {
     console.error("Error saving config to backend:", error);
     alert('Failed to save configuration to backend.');
@@ -112,14 +121,16 @@ async function fetchChatLog() {
     const messages = await response.json();
     CHAT_LOG_ELEMENT.innerHTML = ''; // Clear existing
     messages.forEach(msg => { // Most recent first
-      const messageElement = document.createElement('div');
-      messageElement.classList.add('chat-message');
+      const messageElement = document.createElement('a');
+      messageElement.href = "#"; // Make it look like a list item
+      messageElement.classList.add('list-group-item', 'list-group-item-action');
       
-      const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+      const timestamp = new Date(msg.timestamp).toLocaleTimeString(undefined, { timeZone: 'America/Chicago' });
       messageElement.innerHTML = `
-        <span class="timestamp">${timestamp}</span>
-        <span class="username">${msg.username}:</span>
-        <span class="message-content">${msg.message_html}</span>
+        <div class="d-flex w-100 justify-content-between">
+          <small class="timestamp">${timestamp}</small>
+        </div>
+        <p class="mb-1 message-content">${msg.message_html}</p>
       `;
       CHAT_LOG_ELEMENT.appendChild(messageElement);
     });
@@ -133,43 +144,111 @@ async function fetchChatLog() {
 // --- Mentions Display ---
 async function fetchMentions() {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/mentions?username=${currentUserConfig.username}`);
-    const mentions = await response.json();
-    
-    // Check for new mentions and play sound
-    const oldMentionCount = MENTIONS_LOG_ELEMENT.children.length;
-    if (mentions.length > oldMentionCount && currentUserConfig.play_alert) {
-        MENTION_SOUND.play();
+    let latestTimestamp = null;
+    if (localMentionsCache.length > 0) {
+      // Find the latest timestamp of *visible* mentions in the cache to ask for newer mentions
+      const visibleMentions = localMentionsCache.filter(m => !m.is_hidden);
+      if (visibleMentions.length > 0) {
+        latestTimestamp = visibleMentions.reduce((maxTs, mention) => 
+            (mention.timestamp > maxTs ? mention.timestamp : maxTs), visibleMentions[0].timestamp
+        );
+      }
     }
 
-    MENTIONS_LOG_ELEMENT.innerHTML = ''; // Clear existing
-    mentions.forEach(mention => { // Most recent first
-      const mentionElement = document.createElement('div');
-      mentionElement.classList.add('mention-message');
-      const timestamp = new Date(mention.timestamp).toLocaleTimeString();
-      mentionElement.innerHTML = `
-        <span class="timestamp">${timestamp}</span>
-        <span class="username">${mention.mentioned_user}:</span>
-        <span class="message-content">${mention.message_html}</span>
-      `;
-      MENTIONS_LOG_ELEMENT.appendChild(mentionElement);
+    let url = `${BACKEND_URL}/api/mentions?username=${currentUserConfig.username}`;
+    if (latestTimestamp) {
+      url += `&since=${latestTimestamp.toISOString()}`;
+    }
+
+    const response = await fetch(url);
+    const newMentions = await response.json();
+    
+    let playSound = false;
+    if (newMentions.length > 0 && currentUserConfig.play_alert) {
+      playSound = true;
+    }
+
+    // Merge new mentions with local cache, ensuring no duplicates and chronological order
+    newMentions.forEach(newMention => {
+      newMention.timestamp = new Date(newMention.timestamp); // Convert timestamp string to Date object
+      newMention.is_hidden = newMention.is_hidden || false; // Ensure is_hidden property exists
+      if (!localMentionsCache.some(m => m.id === newMention.id)) {
+        localMentionsCache.push(newMention);
+      } else {
+        // Update existing mention in cache in case is_hidden state changed on backend
+        const existingIndex = localMentionsCache.findIndex(m => m.id === newMention.id);
+        if (existingIndex !== -1) {
+            localMentionsCache[existingIndex] = newMention;
+        }
+      }
     });
-    MENTIONS_LOG_ELEMENT.scrollTop = 0; // Auto-scroll to top
+
+    // Sort the cache by timestamp (most recent first for display)
+    localMentionsCache.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+    localStorage.setItem('localMentionsCache', JSON.stringify(localMentionsCache));
+
+    displayMentions(); // Render all visible mentions from cache
+
+    if (playSound) {
+      MENTION_SOUND.play();
+    }
   } catch (error) {
     console.error("Error fetching mentions:", error);
     MENTIONS_LOG_ELEMENT.innerHTML = '<p>Error loading mentions.</p>';
   }
 }
 
-CLEAR_MENTIONS_BUTTON.addEventListener('click', async () => {
-  if (confirm('Are you sure you want to clear all mentions?')) {
-    try {
-      await fetch(`${BACKEND_URL}/api/mentions?username=${currentUserConfig.username}`, { method: 'DELETE' });
-      MENTIONS_LOG_ELEMENT.innerHTML = '<p>All mentions cleared.</p>';
-      fetchMentions(); // Refresh mentions list
-    } catch (error) {
-      console.error("Error clearing mentions:", error);
-      alert('Failed to clear mentions.');
+function displayMentions() {
+    MENTIONS_LOG_ELEMENT.innerHTML = ''; // Clear existing
+    localMentionsCache.forEach(mention => { // Most recent first
+      if (mention.is_hidden) return; // Skip hidden mentions
+      const mentionElement = document.createElement('div'); // Use div for individual mentions with delete button
+      mentionElement.id = `mention-${mention.id}`; // Add ID for easy removal
+      mentionElement.classList.add('list-group-item', 'list-group-item-action', 'd-flex', 'justify-content-between', 'align-items-start');
+      const timestamp = mention.timestamp.toLocaleTimeString(undefined, { timeZone: 'America/Chicago' }); // Format in Chicago time      
+      mentionElement.innerHTML = `
+        <div class="flex-grow-1">
+            <div class="d-flex w-100 justify-content-between">
+                <small class="timestamp">${timestamp}</small>
+            </div>
+            <p class="mb-1 message-content">${mention.message_html}</p>
+        </div>
+        <button type="button" class="btn btn-danger btn-sm ms-2" data-action="delete-mention" data-mention-id="${mention.id}">
+            &times;
+        </button>
+      `;
+      MENTIONS_LOG_ELEMENT.appendChild(mentionElement);
+    });
+    MENTIONS_LOG_ELEMENT.scrollTop = 0; // Auto-scroll to top
+}
+
+// Event delegation for deleting individual mentions
+MENTIONS_LOG_ELEMENT.addEventListener('click', async (e) => {
+  const deleteButton = e.target.closest('[data-action="delete-mention"]');
+  if (deleteButton) {
+    const mentionId = parseInt(deleteButton.dataset.mentionId, 10);
+    // if (confirm(`Are you sure you want to hide mention ID ${mentionId}?`)) 
+      {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/mentions/${mentionId}`, { method: 'DELETE' });
+        if (response.ok) {
+          // Update local cache: set is_hidden to true
+          const mentionIndex = localMentionsCache.findIndex(m => m.id === mentionId);
+          if (mentionIndex !== -1) {
+            localMentionsCache[mentionIndex].is_hidden = true;
+            localStorage.setItem('localMentionsCache', JSON.stringify(localMentionsCache));
+            displayMentions(); // Re-render to reflect the change (hide the mention)
+          }
+          console.log(`Mention ID ${mentionId} hidden.`);
+        } else {
+          const errorData = await response.json();
+          alert(`Failed to hide mention: ${errorData.detail || response.statusText}`);
+        }
+      } catch (error) {
+        console.error(`Error hiding mention ID ${mentionId}:`, error);
+        alert('Failed to hide mention.');
+      }
     }
   }
 });
@@ -202,3 +281,4 @@ function restartPolling() {
 // Initial fetch when script loads
 fetchChatLog();
 fetchMentions();
+

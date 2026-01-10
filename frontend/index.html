@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
@@ -8,49 +8,65 @@
     <link rel="stylesheet" href="./style.css">
   </head>
   <body>
-    <div id="app">
-      <h1>FRPG Chat Logger</h1>
-
-      <div class="tabs">
-        <button class="tab-button active" onclick="openTab(event, 'chat-tab')">Chat Log</button>
-        <button class="tab-button" onclick="openTab(event, 'mentions-tab')">Mentions</button>
-        <button class="tab-button" onclick="openTab(event, 'config-tab')">Configuration</button>
+    <div id="app" class="container mt-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="text-center">FRPG Chat Logger</h1>
+        <button type="button" class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#configModal">
+          Configuration
+        </button>
       </div>
 
-      <div id="chat-tab" class="tab-content active">
-        <h2>Trade Channel Chat</h2>
-        <div id="chat-log" class="log-container"></div>
-      </div>
+      <div class="row">
+        <!-- Chat Log Column -->
+        <div class="col-md-7">
+          <h2>Trade Channel Chat</h2>
+          <div id="chat-log" class="log-container list-group mt-3"></div>
+        </div>
 
-      <div id="mentions-tab" class="tab-content">
-        <h2>Your Mentions</h2>
-        <button id="clear-mentions">Clear Mentions</button>
-        <div id="mentions-log" class="log-container"></div>
-      </div>
-
-      <div id="config-tab" class="tab-content">
-        <h2>Configuration</h2>
-        <form id="config-form">
-          <label for="username">Your Username:</label>
-          <input type="text" id="username" name="username" value="SuperJ">
-          <small>Used to detect mentions (e.g., @SuperJ)</small><br><br>
-
-          <label for="channel">Chat Channel:</label>
-          <input type="text" id="channel" name="channel" value="trade">
-          <small>The FarmRPG chat channel to monitor</small><br><br>
-
-          <label for="polling-interval">Polling Interval (seconds):</label>
-          <input type="number" id="polling-interval" name="polling_interval" value="30">
-          <small>How often the chat log is fetched</small><br><br>
-
-          <label for="play-alert">Play Alert on Mention:</label>
-          <input type="checkbox" id="play-alert" name="play_alert" checked>
-          <br><br>
-
-          <button type="submit">Save Configuration</button>
-        </form>
+        <!-- Mentions Column -->
+        <div class="col-md-5">
+          <h2>Your Mentions</h2>
+          <div id="mentions-log" class="log-container list-group mt-3"></div>
+        </div>
       </div>
     </div>
+
+    <!-- Configuration Modal -->
+    <div class="modal fade" id="configModal" tabindex="-1" aria-labelledby="configModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h1 class="modal-title fs-5" id="configModalLabel">Configuration</h1>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <form id="config-form" class="mt-3">
+              <div class="mb-3">
+                  <label for="username" class="form-label">Your Username:</label>
+                  <input type="text" class="form-control" id="username" name="username">
+                  <div class="form-text">Used to detect mentions (e.g., @SuperJ)</div>
+              </div>
+              <div class="mb-3">
+                  <label for="channel" class="form-label">Chat Channel:</label>
+                  <input type="text" class="form-control" id="channel" name="channel">
+                  <div class="form-text">The FarmRPG chat channel to monitor</div>
+              </div>
+              <div class="mb-3">
+                  <label for="polling-interval" class="form-label">Polling Interval (seconds):</label>
+                  <input type="number" class="form-control" id="polling-interval" name="polling_interval">
+                  <div class="form-text">How often the chat log is fetched</div>
+              </div>
+              <div class="mb-3 form-check">
+                  <input type="checkbox" class="form-check-input" id="play-alert" name="play_alert">
+                  <label class="form-check-label" for="play-alert">Play Alert on Mention</label>
+              </div>
+              <button type="submit" class="btn btn-primary" data-bs-dismiss="modal">Save Configuration</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/main.js"></script>
     <audio id="mention-sound" src="/mention.mp3" preload="auto"></audio>
   </body>

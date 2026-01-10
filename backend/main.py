@@ -3,13 +3,15 @@ from bs4 import BeautifulSoup
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, inspect, text
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from apscheduler.schedulers.background import BackgroundScheduler
-import datetime
+from datetime import datetime, timedelta, timezone # Consolidated import
 import re
 from typing import List, Optional
 from urllib.parse import urljoin
+from dateutil.parser import parse # Import for robust datetime parsing
+import pytz # Import pytz for timezone handling
 
 # Database Configuration
 DATABASE_URL = "sqlite:///./chatlog.db"
@@ -40,10 +42,11 @@ class Mention(Base):
     message_html = Column(String)
     timestamp = Column(DateTime)
     read = Column(Boolean, default=False)
+    is_hidden = Column(Boolean, default=False) # New column
 
 # Pydantic Models
 class MessageCreate(BaseModel):
-    timestamp: datetime.datetime
+    timestamp: datetime
     username: str
     message_html: str
     channel: str
@@ -59,8 +62,9 @@ class MentionModel(BaseModel):
     message_id: int
     mentioned_user: str
     message_html: str
-    timestamp: datetime.datetime
+    timestamp: datetime
     read: bool
+    is_hidden: bool # New field
 
     class Config:
         from_attributes = True
@@ -101,6 +105,9 @@ def set_config(db: Session, key: str, value: str):
         db.add(Config(key=key, value=value))
     db.commit()
 
+# Define Chicago timezone
+chicago_tz = pytz.timezone('America/Chicago')
+
 def parse_chat_log():
     db = SessionLocal()
     channel_to_parse = get_config(db, "channel", "trade")
@@ -126,13 +133,16 @@ def parse_chat_log():
                     img_tag['src'] = urljoin(BASE_URL, img_tag['src'])
 
             timestamp_str = title.find("strong").text if title.find("strong") else None
-            user_anchor = title.find("a", class_=lambda x: x and x.startswith('cc'))
+            # Find the user link by looking for the specific profile URL structure
+            user_anchor = title.find("a", href=re.compile(r"profile\.php\?user_name="))
             username = user_anchor.text if user_anchor else "System"
             
             if timestamp_str:
                 try:
-                    full_timestamp_str = f"{timestamp_str} {datetime.datetime.now().year}"
-                    timestamp = datetime.datetime.strptime(full_timestamp_str, "%b %d, %I:%M:%S %p %Y")
+                    full_timestamp_str = f"{timestamp_str} {datetime.now().year}" # Use datetime.now()
+                    # Parse using dateutil, then localize to America/Chicago
+                    naive_timestamp = parse(full_timestamp_str)
+                    timestamp = chicago_tz.localize(naive_timestamp, is_dst=None) # Store as Chicago-aware
                 except ValueError:
                     continue
 
@@ -167,12 +177,13 @@ def parse_chat_log():
                                 mentioned_user=mentioned_user,
                                 message_html=message_content_html,
                                 timestamp=timestamp,
-                                read=False
+                                read=False,
+                                is_hidden=False
                             )
                             db.add(new_mention)
         
         db.commit()
-        print(f"Chat log parsed successfully at {datetime.datetime.now()}")
+        print(f"Chat log parsed successfully at {datetime.now()}") # Use datetime.now()
     except Exception as e:
         db.rollback()
         print(f"Error parsing chat log: {e}")
@@ -187,10 +198,24 @@ def startup_event():
         set_config(db, "channel", "trade")
     db.close()
 
+    # Manual migration for 'is_hidden' column
+    with engine.connect() as connection:
+        inspector = inspect(engine)
+        if inspector.has_table("mentions"):
+            columns = inspector.get_columns('mentions')
+            column_names = [col['name'] for col in columns]
+            if 'is_hidden' not in column_names:
+                with connection.begin():
+                    connection.execute(text("ALTER TABLE mentions ADD COLUMN is_hidden BOOLEAN DEFAULT FALSE"))
+                print("Added 'is_hidden' column to 'mentions' table.")
+
+
     scheduler = BackgroundScheduler()
+    # Schedule to run every 30 seconds
     scheduler.add_job(parse_chat_log, 'interval', seconds=30)
+    # Schedule to run once immediately
+    scheduler.add_job(parse_chat_log, 'date', run_date=datetime.now() + timedelta(seconds=1)) # Use datetime.now() and timedelta
     scheduler.start()
-    parse_chat_log()
 
 @app.get("/api/messages", response_model=List[MessageModel])
 def get_messages(db: Session = Depends(get_db), limit: int = 200, channel: str = "trade"):
@@ -198,19 +223,32 @@ def get_messages(db: Session = Depends(get_db), limit: int = 200, channel: str =
     return messages
 
 @app.get("/api/mentions", response_model=List[MentionModel])
-def get_mentions(username: str, db: Session = Depends(get_db)):
+def get_mentions(username: str, db: Session = Depends(get_db), since: Optional[datetime] = None):
     if not username:
         raise HTTPException(status_code=400, detail="Username parameter is required.")
-    mentions = db.query(Mention).filter(Mention.mentioned_user.ilike(username)).order_by(Mention.timestamp.desc()).all()
+    
+    query = db.query(Mention).filter(Mention.mentioned_user.ilike(username)).filter(Mention.is_hidden == False) # Filter out hidden mentions
+    
+    if since:
+        # Frontend sends 'since' as UTC. Convert it to America/Chicago for consistent comparison with stored times.
+        if since.tzinfo is None: # If naive, assume UTC as per frontend sending
+            since = since.replace(tzinfo=timezone.utc)
+        since_chicago = since.astimezone(chicago_tz)
+        
+        query = query.filter(Mention.timestamp > since_chicago)
+        
+    mentions = query.order_by(Mention.timestamp.desc()).all()
     return mentions
 
-@app.delete("/api/mentions")
-def clear_mentions(username: str, db: Session = Depends(get_db)):
-    if not username:
-        raise HTTPException(status_code=400, detail="Username parameter is required.")
-    db.query(Mention).filter(Mention.mentioned_user.ilike(username)).delete()
+@app.delete("/api/mentions/{mention_id}")
+def delete_mention(mention_id: int, db: Session = Depends(get_db)):
+    mention = db.query(Mention).filter(Mention.id == mention_id).first()
+    if not mention:
+        raise HTTPException(status_code=404, detail="Mention not found")
+    
+    mention.is_hidden = True # Set to hidden instead of deleting
     db.commit()
-    return {"message": "Mentions cleared successfully"}
+    return {"message": "Mention hidden successfully"}
 
 @app.get("/api/config", response_model=List[ConfigModel])
 def get_all_configs(db: Session = Depends(get_db)):

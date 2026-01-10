@@ -1,166 +1,51 @@
-body {
-    font-family: sans-serif;
-    margin: 0;
-    padding: 20px;
-    background-color: #f4f4f4;
-    color: #333;
-}
-
-#app {
-    max-width: 900px;
-    margin: 0 auto;
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-h1, h2 {
-    color: #0056b3;
-    text-align: center;
-}
-
-.tabs {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 20px;
-    border-bottom: 1px solid #eee;
-}
-
-.tab-button {
-    background-color: #eee;
-    border: none;
-    padding: 10px 20px;
-    cursor: pointer;
-    font-size: 16px;
-    transition: background-color 0.3s ease;
-}
-
-.tab-button:hover {
-    background-color: #ddd;
-}
-
-.tab-button.active {
-    background-color: #0056b3;
-    color: white;
-    border-bottom: 2px solid #0056b3;
-}
-
-.tab-content {
-    display: none;
-    padding: 20px 0;
-}
-
-.tab-content.active {
-    display: block;
-}
+/* Custom Styles to complement Bootstrap Dark Theme */
 
 .log-container {
-    height: 400px;
-    overflow-y: scroll;
-    border: 1px solid #ddd;
-    padding: 10px;
-    background-color: #f9f9f9;
-    border-radius: 4px;
-    margin-top: 10px;
+    height: 75vh; /* Make the log containers taller */
+    overflow-y: auto;
 }
 
-.chat-message, .mention-message {
-    padding: 8px;
-    border-bottom: 1px dashed #eee;
-}
-
-.chat-message:last-child, .mention-message:last-child {
-    border-bottom: none;
-}
-
-.timestamp {
-    font-size: 0.8em;
-    color: #888;
-    margin-right: 5px;
+/* Ensure links parsed from the game's HTML are visible on a dark theme */
+.message-content a {
+    color: #8ab4f8; /* A light blue that stands out */
 }
 
 .username {
     font-weight: bold;
-    color: #007bff;
-    margin-right: 5px;
-}
-
-.message-content {
-    display: inline;
-}
-
-/* Configuration Form */
-#config-form label {
-    display: inline-block;
-    width: 150px;
-    margin-bottom: 10px;
-    font-weight: bold;
-}
-
-#config-form input[type="text"],
-#config-form input[type="number"] {
-    width: 200px;
-    padding: 8px;
-    margin-bottom: 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-}
-
-#config-form input[type="checkbox"] {
-    margin-left: 5px;
-}
-
-#config-form button {
-    background-color: #28a745;
-    color: white;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 16px;
-}
-
-#config-form button:hover {
-    background-color: #218838;
-}
-
-#clear-mentions {
-    background-color: #dc3545;
-    color: white;
-    padding: 8px 15px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-bottom: 10px;
-}
-
-#clear-mentions:hover {
-    background-color: #c82333;
-}
-
-/* Styles for item images in chat messages */
-.itemimgsm {
-    vertical-align: middle;
-    height: 1.2em; /* Adjust as needed */
-    width: auto;
-    margin-right: 2px;
+    color: #6c757d; /* A muted color for username */
 }
 
 /* Styling for mentions within chat messages (from FarmRPG site) */
-a[style='color:teal'] {
-    color: #008080 !important; /* Teal */
+a[style*='color:teal'] {
+    color: #20c997 !important; /* Bootstrap's teal, for consistency */
     text-decoration: none;
     font-weight: bold;
 }
-a[style='color:teal']:hover {
+a[style*='color:teal']:hover {
     text-decoration: underline;
 }
 
-/* Color codes for usernames (from FarmRPG site - example, use if needed) */
-.cc1010 { color: #8B4513; } /* SaddleBrown */
-.cc8 { color: #00008B; } /* DarkBlue */
-.cc1016 { color: #800000; } /* Maroon */
-.cc1018 { color: #556B2F; } /* DarkOliveGreen */
-.cc1008 { color: #8B0000; } /* DarkRed */
-/* Add more as needed by inspecting the source */
+/* Color codes for usernames (from FarmRPG site - example) */
+.cc1010, .cc1010 a { color: #d2b48c !important; } /* Tan */
+.cc8, .cc8 a { color: #87cefa !important; } /* LightSkyBlue */
+.cc1016, .cc1016 a { color: #ff7f50 !important; } /* Coral */
+.cc1018, .cc1018 a { color: #98fb98 !important; } /* PaleGreen */
+.cc1008, .cc1008 a { color: #f08080 !important; } /* LightCoral */
+.cc44, .cc44 a { color: #ffb6c1 !important; } /* LightPink */
+/* Add more as needed by inspecting the source and choosing a light equivalent */
+
+.itemimgsm {
+    vertical-align: middle;
+    height: 25px; /* Adjust as needed */
+    width: 25px;
+    margin-right: 2px;
+}
+
+/* Reduce font size for chat log and mentions text */
+.log-container .list-group-item {
+    font-size: 12px;
+    border-bottom: none !important; /* Remove separators */
+    padding-top: 0px !important;
+    padding-bottom: 0px !important;
+    margin-top: 0px !important;
+}
