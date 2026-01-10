@@ -212,7 +212,7 @@ def startup_event():
 
     scheduler = BackgroundScheduler()
     # Schedule to run every 30 seconds
-    scheduler.add_job(parse_chat_log, 'interval', seconds=30)
+    scheduler.add_job(parse_chat_log, 'interval', seconds=3)
     # Schedule to run once immediately
     scheduler.add_job(parse_chat_log, 'date', run_date=datetime.now() + timedelta(seconds=1)) # Use datetime.now() and timedelta
     scheduler.start()
