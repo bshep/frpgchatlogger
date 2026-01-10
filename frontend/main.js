@@ -1,7 +1,7 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap';
 
-const BACKEND_URL = "http://localhost:8000";
+const BACKEND_URL = "/";
 const CHAT_LOG_ELEMENT = document.getElementById('chat-log');
 const MENTIONS_LOG_ELEMENT = document.getElementById('mentions-log');
 const CONFIG_FORM = document.getElementById('config-form');
