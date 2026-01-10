@@ -82,9 +82,9 @@ After=network.target
 User=ec2-user
 Group=nginx
 WorkingDirectory=/var/www/frpgchatlogger/backend
-ExecStart=/var/www/frpgchatlogger/backend/venv_backend/bin/python3 -m gunicorn --workers 4 --bind 127.0.0.1:8000 main:app
+ExecStart=/var/www/frpgchatlogger/backend/venv_backend/bin/python3 -m gunicorn -k uvicorn.workers.UvicornWorker --workers 4 --bind 127.0.0.1:8000 main:app
 # If using FastAPI with uvicorn directly:
-# ExecStart=/usr/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8000
+# ExecStart=/var/www/frpgchatlogger/backend/venv_backend/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=always
 PrivateTmp=true
 
