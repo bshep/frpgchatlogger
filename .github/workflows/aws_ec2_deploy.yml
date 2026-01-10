@@ -52,22 +52,20 @@ jobs:
         scp -o StrictHostKeyChecking=no -i deploy_key.pem -r frontend/dist/* $EC2_USER@$EC2_HOST:$DEPLOY_DIR/html/
 
         # SSH into EC2 and run deployment commands
-        ssh -o StrictHostKeyChecking=no -i deploy_key.pem $EC2_USER@$EC2_HOST << 'EOF'
-          # Navigate to project root
+        ssh -o StrictHostKeyChecking=no -i deploy_key.pem $EC2_USER@$EC2_HOST "
+          set -e
+          echo 'Navigating to project root...'
           cd /var/www/frpgchatlogger/
 
-          # Update backend dependencies (if requirements.txt changed)
-          # Re-create and activate venv_backend to ensure all dependencies are fresh
+          echo 'Updating backend dependencies...'
           python3 -m venv backend/venv_backend
           source backend/venv_backend/bin/activate
           pip install -r backend/requirements.txt
           deactivate
 
-          # Restart Gunicorn/Uvicorn service
-          # This assumes a systemd service 'frpgchatlogger_backend.service' is configured on EC2.
-          sudo systemctl daemon-reload # Reload systemd units if necessary
+          echo 'Restarting services...'
+          sudo systemctl daemon-reload
           sudo systemctl restart frpgchatlogger_backend.service
-
-          # Restart Nginx
           sudo systemctl restart nginx
-          EOF
+          echo 'Deployment successful!'
+        "
