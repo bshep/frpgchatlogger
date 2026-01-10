@@ -1,0 +1,85 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - main # Trigger this workflow on pushes to the 'main' branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18' # Use a Node.js version compatible with your frontend
+
+    - name: Install Frontend Dependencies
+      run: |
+        cd frontend
+        npm install
+
+    - name: Build Frontend
+      run: |
+        cd frontend
+        npm run build
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9' # Use a Python version compatible with your backend
+
+    - name: Install Backend Dependencies
+      run: |
+        python -m venv venv_backend
+        source venv_backend/bin/activate
+        pip install -r backend/requirements.txt
+        deactivate
+
+    - name: Deploy to EC2
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USER: ${{ secrets.EC2_USER }}
+      run: |
+        # Ensure SSH key has correct permissions
+        echo "$SSH_PRIVATE_KEY" > deploy_key.pem
+        chmod 600 deploy_key.pem
+
+        # Define target directory on EC2
+        DEPLOY_DIR="/var/www/frpgchatlogger/"
+
+        ssh -o StrictHostKeyChecking=no -i deploy_key.pem $EC2_USER@$EC2_HOST "ls -l $DEPLOY_DIR" || mkdir -p $DEPLOY_DIR
+
+        # Transfer backend files
+        # Note: If backend contains sensitive files (like .env), adjust scp to exclude them.
+        scp -o StrictHostKeyChecking=no -i deploy_key.pem -r backend $EC2_USER@$EC2_HOST:$DEPLOY_DIR/
+
+        # Transfer frontend build output
+        # Ensure 'dist' matches your actual frontend build output directory.
+        scp -o StrictHostKeyChecking=no -i deploy_key.pem -r frontend/dist/* $EC2_USER@$EC2_HOST:$DEPLOY_DIR/html/
+
+        # SSH into EC2 and run deployment commands
+        ssh -o StrictHostKeyChecking=no -i deploy_key.pem $EC2_USER@$EC2_HOST << 'EOF'
+          # Navigate to project root
+          cd /var/www/frpgchatlogger/
+
+          # Update backend dependencies (if requirements.txt changed)
+          # Re-create and activate venv_backend to ensure all dependencies are fresh
+          python3 -m venv backend/venv_backend
+          source backend/venv_backend/bin/activate
+          pip install -r backend/requirements.txt
+          deactivate
+
+          # Restart Gunicorn/Uvicorn service
+          # This assumes a systemd service 'frpgchatlogger_backend.service' is configured on EC2.
+          sudo systemctl daemon-reload # Reload systemd units if necessary
+          sudo systemctl restart frpgchatlogger_backend.service
+
+          # Restart Nginx
+          sudo systemctl restart nginx
+          EOF
