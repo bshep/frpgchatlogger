@@ -1,7 +1,10 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap';
 
-const BACKEND_URL = document.location.protocol + "//" + document.location.host;
+const isProduction = import.meta.env.PROD;
+console.log(`Environment: ${isProduction ? 'Production' : 'Development'}`);
+
+const BACKEND_URL = isProduction ? document.location.protocol + "//" + document.location.host : "http://localhost:8000";
 const CHAT_LOG_ELEMENT = document.getElementById('chat-log');
 const MENTIONS_LOG_ELEMENT = document.getElementById('mentions-log');
 const CONFIG_FORM = document.getElementById('config-form');
@@ -100,8 +103,6 @@ CONFIG_FORM.addEventListener('submit', async (e) => {
 
   // Update backend config for channel ONLY
   try {
-    await fetch(`${BACKEND_URL}/api/config?key=channel&value=${newConfig.channel}`, { method: 'POST' });
-    alert('Configuration saved!');
     restartPolling(); // Restart polling to use new interval or channel
   } catch (error) {
     console.error("Error saving config to backend:", error);
