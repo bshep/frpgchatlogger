@@ -208,6 +208,7 @@ function displayMentions() {
         <div class="flex-grow-1">
             <div class="d-flex w-100 justify-content-between">
                 <small class="timestamp">${timestamp}</small>
+                <small class="channel">(${mention.channel})</small>
             </div>
             <p class="mb-1 message-content">${mention.message_html}</p>
         </div>
