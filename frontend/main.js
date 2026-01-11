@@ -268,7 +268,7 @@ function displayMentions() {
       const mentionElement = document.createElement('div');
       mentionElement.id = `mention-${mention.id}`;
       mentionElement.classList.add('list-group-item', 'list-group-item-action', 'd-flex', 'justify-content-between', 'align-items-start');
-      const timestamp = new Date(mention.timestamp).toLocaleTimeString(undefined, { timeZone: 'America/Chicago' });
+      const timestamp = new Date(mention.timestamp).toLocaleString(undefined, { timeZone: 'America/Chicago' });
       mentionElement.innerHTML = `
         <div class="flex-grow-1">
             <div class="d-flex w-100 justify-content-between">
