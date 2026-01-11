@@ -26,11 +26,34 @@
             <li class="nav-item">
               <a class="nav-link" href="#" data-channel="giveaways">Giveaways</a>
             </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#" data-channel="advanced-search">Advanced Search</a>
+            </li>
           </ul>
-          <div class="mb-3">
-            <input type="text" class="form-control" id="chat-search-bar" placeholder="Search chat log...">
+
+          <!-- View for regular channel chat -->
+          <div id="channel-view">
+            <div class="mb-3">
+              <input type="text" class="form-control" id="chat-search-bar" placeholder="Search current channel log...">
+            </div>
+            <div id="chat-log" class="log-container list-group mt-3"></div>
           </div>
-          <div id="chat-log" class="log-container list-group mt-3"></div>
+
+          <!-- View for Advanced Search -->
+          <div id="advanced-search-view" style="display: none;">
+            <form id="advanced-search-form" class="mb-3">
+              <div class="input-group">
+                <input type="text" id="advanced-search-input" class="form-control" placeholder="Search entire chat history...">
+                <select class="form-select" id="advanced-search-channel-filter" style="max-width: 150px;">
+                  <option selected value="">All Channels</option>
+                  <option value="trade">Trade</option>
+                  <option value="giveaways">Giveaways</option>
+                </select>
+                <button class="btn btn-primary" type="submit">Search</button>
+              </div>
+            </form>
+            <div id="advanced-search-results" class="log-container list-group mt-3"></div>
+          </div>
         </div>
 
         <!-- Mentions Column -->

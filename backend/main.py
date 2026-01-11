@@ -235,6 +235,24 @@ def get_messages(db: Session = Depends(get_db), limit: int = 200, channel: str =
     messages = db.query(Message).filter(Message.channel == channel).order_by(Message.timestamp.desc()).limit(limit).all()
     return messages
 
+@app.get("/api/search", response_model=List[MessageModel])
+def search_messages(q: str, channel: Optional[str] = None, db: Session = Depends(get_db)):
+    if not q:
+        return []
+    
+    query = db.query(Message)
+    
+    # Perform a case-insensitive search on the message content.
+    # Using .ilike() for case-insensitivity which is standard in SQLAlchemy.
+    query = query.filter(Message.message_html.ilike(f"%{q}%"))
+    
+    if channel:
+        query = query.filter(Message.channel == channel)
+        
+    # Return results ordered by most recent first, with a safety limit.
+    results = query.order_by(Message.timestamp.desc()).limit(500).all()
+    return results
+
 @app.get("/api/mentions", response_model=List[MentionModel])
 def get_mentions(username: str, db: Session = Depends(get_db), since: Optional[datetime] = None):
     if not username:

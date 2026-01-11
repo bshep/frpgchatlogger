@@ -5,38 +5,45 @@ const isProduction = import.meta.env.PROD;
 console.log(`Environment: ${isProduction ? 'Production' : 'Development'}`);
 
 const BACKEND_URL = isProduction ? document.location.protocol + "//" + document.location.host : "http://localhost:8000";
+
+// --- DOM Elements ---
 const CHAT_LOG_ELEMENT = document.getElementById('chat-log');
 const MENTIONS_LOG_ELEMENT = document.getElementById('mentions-log');
 const CONFIG_FORM = document.getElementById('config-form');
 const MENTION_SOUND = document.getElementById('mention-sound');
 const CHANNEL_TABS = document.getElementById('channel-tabs');
 const CHAT_SEARCH_BAR = document.getElementById('chat-search-bar');
+const CHANNEL_VIEW = document.getElementById('channel-view');
+const ADVANCED_SEARCH_VIEW = document.getElementById('advanced-search-view');
+const ADVANCED_SEARCH_FORM = document.getElementById('advanced-search-form');
+const ADVANCED_SEARCH_INPUT = document.getElementById('advanced-search-input');
+const ADVANCED_SEARCH_RESULTS = document.getElementById('advanced-search-results');
+const ADVANCED_SEARCH_CHANNEL_FILTER = document.getElementById('advanced-search-channel-filter');
 
+
+// --- State ---
 let activeChannel = 'trade'; // Default active channel
-
 let currentUserConfig = {
   username: "YourUsername",
-  channel: "trade", // This will now be primarily controlled by the active tab
   play_alert: true,
   polling_interval: 5, // in seconds
 };
+let localMentionsCache = [];
 
-let localMentionsCache = []; // Initialize local cache for mentions
-
-// On DOMContentLoaded
+// --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
   loadConfigFromLocalStorage();
   fetchBackendConfig();
   startPolling();
+  setupAudioUnlock();
+});
 
-  // Attempt to "unlock" audio context on first user interaction
+function setupAudioUnlock() {
   const unlockAudio = () => {
     if (MENTION_SOUND.paused) {
-      MENTION_SOUND.play().then(() => {
+      MENTION_SOUND.play().catch(e => console.warn("Audio autoplay failed.", e)).then(() => {
         MENTION_SOUND.pause();
         MENTION_SOUND.currentTime = 0;
-      }).catch(error => {
-        console.warn("Audio autoplay prevented, user interaction needed:", error);
       });
     }
     document.removeEventListener('click', unlockAudio);
@@ -44,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   document.addEventListener('click', unlockAudio);
   document.addEventListener('touchend', unlockAudio);
-});
+}
 
 // --- Search, Filter, and Tab Navigation ---
 function applyChatFilter() {
@@ -52,11 +59,7 @@ function applyChatFilter() {
   const messages = CHAT_LOG_ELEMENT.querySelectorAll('.list-group-item');
   messages.forEach(message => {
     const messageText = message.textContent.toLowerCase();
-    if (messageText.includes(query)) {
-      message.style.display = 'block'; // Use 'block' to show list-group-item correctly
-    } else {
-      message.style.display = 'none';
-    }
+    message.style.display = messageText.includes(query) ? 'block' : 'none';
   });
 }
 
@@ -65,19 +68,79 @@ CHAT_SEARCH_BAR.addEventListener('input', applyChatFilter);
 CHANNEL_TABS.addEventListener('click', (e) => {
   e.preventDefault();
   const clickedTab = e.target.closest('[data-channel]');
-  if (clickedTab && clickedTab.dataset.channel !== activeChannel) {
-    // Update active channel
-    activeChannel = clickedTab.dataset.channel;
-
-    // Update active class on tabs
+  if (clickedTab) {
+    const channel = clickedTab.dataset.channel;
+    
     CHANNEL_TABS.querySelectorAll('.nav-link').forEach(tab => tab.classList.remove('active'));
     clickedTab.classList.add('active');
 
-    // Clear search bar and fetch new data
-    CHAT_SEARCH_BAR.value = '';
-    fetchChatLog();
+    if (channel === 'advanced-search') {
+      // Switch to advanced search view
+      CHANNEL_VIEW.style.display = 'none';
+      ADVANCED_SEARCH_VIEW.style.display = 'block';
+      stopPolling();
+    } else {
+      // Switch to a channel view
+      CHANNEL_VIEW.style.display = 'block';
+      ADVANCED_SEARCH_VIEW.style.display = 'none';
+      if (activeChannel !== channel) {
+        activeChannel = channel;
+        CHAT_SEARCH_BAR.value = '';
+        fetchChatLog();
+        restartPolling(); // Restart polling only if it was stopped
+      }
+    }
   }
 });
+
+ADVANCED_SEARCH_FORM.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const query = ADVANCED_SEARCH_INPUT.value;
+  const channel = ADVANCED_SEARCH_CHANNEL_FILTER.value;
+  if (!query) return;
+
+  ADVANCED_SEARCH_RESULTS.innerHTML = '<p class="text-center">Searching...</p>';
+  try {
+    let url = `${BACKEND_URL}/api/search?q=${encodeURIComponent(query)}`;
+    if (channel) {
+      url += `&channel=${encodeURIComponent(channel)}`;
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Search failed with status ${response.status}`);
+    const results = await response.json();
+    renderMessages(ADVANCED_SEARCH_RESULTS, results);
+    if (results.length === 0) {
+      ADVANCED_SEARCH_RESULTS.innerHTML = '<p class="text-center">No results found.</p>';
+    }
+  } catch (error) {
+    console.error('Advanced search failed:', error);
+    ADVANCED_SEARCH_RESULTS.innerHTML = '<p class="text-center text-danger">Search failed. Please try again.</p>';
+  }
+});
+
+// --- Generic Message Renderer ---
+function renderMessages(element, messages) {
+  element.innerHTML = '';
+  messages.forEach(msg => {
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('list-group-item', 'list-group-item-action');
+    const timestamp = new Date(msg.timestamp).toLocaleTimeString(undefined, { timeZone: 'America/Chicago' });
+    const channelInfo = activeChannel === 'advanced-search' ? `<small class="channel">(${msg.channel})</small>` : '';
+    messageElement.innerHTML = `
+      <div class="d-flex w-100 justify-content-between">
+        <small class="timestamp">${timestamp}</small>
+        ${channelInfo}
+      </div>
+      <p class="mb-1 message-content">${msg.message_html}</p>
+    `;
+    element.appendChild(messageElement);
+  });
+
+  if ( element.scrollTop < 50 ) {
+    element.scrollTop = 0;
+  }
+}
 
 // --- Configuration Management ---
 function loadConfigFromLocalStorage() {
@@ -114,58 +177,35 @@ async function fetchBackendConfig() {
   }
 }
 
-CONFIG_FORM.addEventListener('submit', async (e) => {
+CONFIG_FORM.addEventListener('submit', (e) => {
   e.preventDefault();
   const formData = new FormData(CONFIG_FORM);
-  const newConfig = {
-    username: formData.get('username'),
-    polling_interval: parseInt(formData.get('polling_interval'), 10),
-    play_alert: formData.get('play_alert') === 'on' ? true : false,
-  };
-
   const oldUsername = currentUserConfig.username;
-  currentUserConfig = newConfig;
+  currentUserConfig.username = formData.get('username');
+  currentUserConfig.polling_interval = parseInt(formData.get('polling_interval'), 10);
+  currentUserConfig.play_alert = formData.get('play_alert') === 'on';
+
   localStorage.setItem('userConfig', JSON.stringify(currentUserConfig));
 
-  if (oldUsername !== newConfig.username) {
+  if (oldUsername !== currentUserConfig.username) {
     localMentionsCache = [];
     localStorage.removeItem('localMentionsCache');
     fetchMentions();
   }
-  
   restartPolling();
 });
 
 // --- Chat Log Display ---
 async function fetchChatLog() {
+  if (activeChannel === 'advanced-search') return; // Don't fetch for advanced search tab
   try {
     const response = await fetch(`${BACKEND_URL}/api/messages?limit=200&channel=${activeChannel}`);
     const messages = await response.json();
-    CHAT_LOG_ELEMENT.innerHTML = ''; // Clear existing
-    messages.forEach(msg => { // Most recent first
-      const messageElement = document.createElement('a');
-      messageElement.href = "#"; // Make it look like a list item
-      messageElement.classList.add('list-group-item', 'list-group-item-action');
-      
-      const timestamp = new Date(msg.timestamp).toLocaleTimeString(undefined, { timeZone: 'America/Chicago' });
-      messageElement.innerHTML = `
-        <div class="d-flex w-100 justify-content-between">
-          <small class="timestamp">${timestamp}</small>
-        </div>
-        <p class="mb-1 message-content">${msg.message_html}</p>
-      `;
-      CHAT_LOG_ELEMENT.appendChild(messageElement);
-    });
-    // Only scroll to top when new channel is loaded or when already at top
-    if (CHAT_LOG_ELEMENT.scrollTop < 50) {
-        CHAT_LOG_ELEMENT.scrollTop = 0; // Auto-scroll to top
-    } 
-
-    // Re-apply the current filter after rendering new messages
+    renderMessages(CHAT_LOG_ELEMENT, messages);
     applyChatFilter();
   } catch (error) {
     console.error(`Error fetching chat log for ${activeChannel}:`, error);
-    CHAT_LOG_ELEMENT.innerHTML = `<p>Error loading chat log for ${activeChannel}.</p>`;
+    CHAT_LOG_ELEMENT.innerHTML = `<p class="text-danger">Error loading chat log for ${activeChannel}.</p>`;
   }
 }
 
@@ -286,6 +326,7 @@ function startPolling() {
 function stopPolling() {
   if (pollingIntervalId) {
     clearInterval(pollingIntervalId);
+    pollingIntervalId = null;
     console.log("Polling stopped.");
   }
 }
