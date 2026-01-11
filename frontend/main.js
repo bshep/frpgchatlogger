@@ -283,7 +283,9 @@ function displayMentions() {
       `;
       MENTIONS_LOG_ELEMENT.appendChild(mentionElement);
     });
-    MENTIONS_LOG_ELEMENT.scrollTop = 0;
+    if (MENTIONS_LOG_ELEMENT.scrollTop < 50 ) {
+      MENTIONS_LOG_ELEMENT.scrollTop = 0;
+    }
 }
 
 MENTIONS_LOG_ELEMENT.addEventListener('click', async (e) => {
