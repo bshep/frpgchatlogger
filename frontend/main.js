@@ -10,6 +10,7 @@ const MENTIONS_LOG_ELEMENT = document.getElementById('mentions-log');
 const CONFIG_FORM = document.getElementById('config-form');
 const MENTION_SOUND = document.getElementById('mention-sound');
 const CHANNEL_TABS = document.getElementById('channel-tabs');
+const CHAT_SEARCH_BAR = document.getElementById('chat-search-bar');
 
 let activeChannel = 'trade'; // Default active channel
 
@@ -45,7 +46,22 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('touchend', unlockAudio);
 });
 
-// --- Tab Navigation ---
+// --- Search, Filter, and Tab Navigation ---
+function applyChatFilter() {
+  const query = CHAT_SEARCH_BAR.value.toLowerCase();
+  const messages = CHAT_LOG_ELEMENT.querySelectorAll('.list-group-item');
+  messages.forEach(message => {
+    const messageText = message.textContent.toLowerCase();
+    if (messageText.includes(query)) {
+      message.style.display = 'block'; // Use 'block' to show list-group-item correctly
+    } else {
+      message.style.display = 'none';
+    }
+  });
+}
+
+CHAT_SEARCH_BAR.addEventListener('input', applyChatFilter);
+
 CHANNEL_TABS.addEventListener('click', (e) => {
   e.preventDefault();
   const clickedTab = e.target.closest('[data-channel]');
@@ -57,7 +73,8 @@ CHANNEL_TABS.addEventListener('click', (e) => {
     CHANNEL_TABS.querySelectorAll('.nav-link').forEach(tab => tab.classList.remove('active'));
     clickedTab.classList.add('active');
 
-    // Fetch new channel data immediately
+    // Clear search bar and fetch new data
+    CHAT_SEARCH_BAR.value = '';
     fetchChatLog();
   }
 });
@@ -102,7 +119,6 @@ CONFIG_FORM.addEventListener('submit', async (e) => {
   const formData = new FormData(CONFIG_FORM);
   const newConfig = {
     username: formData.get('username'),
-    channel: formData.get('channel'), // Note: this channel setting is now less relevant for display
     polling_interval: parseInt(formData.get('polling_interval'), 10),
     play_alert: formData.get('play_alert') === 'on' ? true : false,
   };
@@ -140,7 +156,13 @@ async function fetchChatLog() {
       `;
       CHAT_LOG_ELEMENT.appendChild(messageElement);
     });
-    CHAT_LOG_ELEMENT.scrollTop = 0; // Auto-scroll to top
+    // Only scroll to top when new channel is loaded or when already at top
+    if (CHAT_LOG_ELEMENT.scrollTop < 50) {
+        CHAT_LOG_ELEMENT.scrollTop = 0; // Auto-scroll to top
+    } 
+
+    // Re-apply the current filter after rendering new messages
+    applyChatFilter();
   } catch (error) {
     console.error(`Error fetching chat log for ${activeChannel}:`, error);
     CHAT_LOG_ELEMENT.innerHTML = `<p>Error loading chat log for ${activeChannel}.</p>`;
