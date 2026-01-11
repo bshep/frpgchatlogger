@@ -43,6 +43,7 @@ class Mention(Base):
     timestamp = Column(DateTime)
     read = Column(Boolean, default=False)
     is_hidden = Column(Boolean, default=False) # New column
+    channel = Column(String, default="trade") # Added channel column
 
 # Pydantic Models
 class MessageCreate(BaseModel):
@@ -65,6 +66,7 @@ class MentionModel(BaseModel):
     timestamp: datetime
     read: bool
     is_hidden: bool # New field
+    channel: str # Added channel field
 
     class Config:
         from_attributes = True
@@ -176,7 +178,8 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
                                 message_html=message_content_html,
                                 timestamp=timestamp,
                                 read=False,
-                                is_hidden=False
+                                is_hidden=False,
+                                channel=channel_to_parse # Pass the channel here
                             )
                             db.add(new_mention)
         
