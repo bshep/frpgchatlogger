@@ -25,7 +25,7 @@ const ADVANCED_SEARCH_CHANNEL_FILTER = document.getElementById('advanced-search-
 let activeChannel = 'trade'; // Default active channel
 let currentUserConfig = {
   username: "YourUsername",
-  play_alert: true,
+  play_alert: false,
   polling_interval: 5, // in seconds
 };
 let localMentionsCache = [];
