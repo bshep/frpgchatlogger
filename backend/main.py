@@ -108,9 +108,8 @@ def set_config(db: Session, key: str, value: str):
 # Define Chicago timezone
 chicago_tz = pytz.timezone('America/Chicago')
 
-def parse_chat_log():
-    db = SessionLocal()
-    channel_to_parse = get_config(db, "channel", "trade")
+def parse_single_channel_log(db: Session, channel_to_parse: str):
+    """Parses the chat log for a single specified channel."""
     BASE_URL = "http://farmrpg.com/"
     URL = f"{BASE_URL}chatlog.php?channel={channel_to_parse}"
     
@@ -146,7 +145,6 @@ def parse_chat_log():
                 except ValueError:
                     continue
 
-                original_title_html = str(title)
                 message_text_for_mention_check = title.get_text()
 
                 if title.strong:
@@ -156,7 +154,7 @@ def parse_chat_log():
                 
                 message_content_html = str(title)
 
-                existing_message = db.query(Message).filter_by(timestamp=timestamp, username=username).first()
+                existing_message = db.query(Message).filter_by(timestamp=timestamp, username=username, channel=channel_to_parse).first()
                 if not existing_message:
                     new_message = Message(
                         timestamp=timestamp,
@@ -183,10 +181,21 @@ def parse_chat_log():
                             db.add(new_mention)
         
         db.commit()
-        print(f"Chat log parsed successfully at {datetime.now()}") # Use datetime.now()
+        print(f"Chat log for channel '{channel_to_parse}' parsed successfully at {datetime.now()}")
     except Exception as e:
         db.rollback()
-        print(f"Error parsing chat log: {e}")
+        print(f"Error parsing chat log for channel '{channel_to_parse}': {e}")
+
+def scheduled_log_parsing():
+    """Scheduled task to parse logs for all configured channels."""
+    db = SessionLocal()
+    try:
+        channels_str = get_config(db, "channels_to_track", "trade,giveaways")
+        if channels_str:
+            channels = [channel.strip() for channel in channels_str.split(',')]
+            for channel in channels:
+                if channel: # Ensure channel string is not empty
+                    parse_single_channel_log(db, channel)
     finally:
         db.close()
 
@@ -194,8 +203,9 @@ def parse_chat_log():
 def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
-    if not get_config(db, "channel"):
-        set_config(db, "channel", "trade")
+    # Set default channels to track if not already configured
+    if not get_config(db, "channels_to_track"):
+        set_config(db, "channels_to_track", "trade,giveaways")
     db.close()
 
     # Manual migration for 'is_hidden' column
@@ -211,10 +221,10 @@ def startup_event():
 
 
     scheduler = BackgroundScheduler()
-    # Schedule to run every 30 seconds
-    scheduler.add_job(parse_chat_log, 'interval', seconds=3)
+    # Schedule to run every 3 seconds
+    scheduler.add_job(scheduled_log_parsing, 'interval', seconds=3)
     # Schedule to run once immediately
-    scheduler.add_job(parse_chat_log, 'date', run_date=datetime.now() + timedelta(seconds=1)) # Use datetime.now() and timedelta
+    scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1))
     scheduler.start()
 
 @app.get("/api/messages", response_model=List[MessageModel])
@@ -254,12 +264,14 @@ def delete_mention(mention_id: int, db: Session = Depends(get_db)):
 def get_all_configs(db: Session = Depends(get_db)):
     return db.query(Config).all()
 
-@app.post("/api/config", response_model=ConfigModel)
-def update_channel_config(key: str, value: str, db: Session = Depends(get_db)):
-    if key not in ["channel"]:
-        raise HTTPException(status_code=400, detail=f"Configuration for '{key}' cannot be set via this endpoint.")
-    set_config(db, key, value)
-    return ConfigModel(key=key, value=value)
+# Turned off to prevent unauthorized config changes, eventually can implement auth.
+# @app.post("/api/config", response_model=ConfigModel)
+# def update_channel_config(key: str, value: str, db: Session = Depends(get_db)):
+#     # Allow 'channels_to_track' to be configured via the API.
+#     if key not in ["channels_to_track"]:
+#         raise HTTPException(status_code=400, detail=f"Configuration for '{key}' cannot be set via this endpoint.")
+#     set_config(db, key, value)
+#     return ConfigModel(key=key, value=value)
 
 @app.get("/")
 def read_root():

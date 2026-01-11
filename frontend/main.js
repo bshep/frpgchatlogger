@@ -67,12 +67,8 @@ async function fetchBackendConfig() {
     const channelRes = await fetch(`${BACKEND_URL}/api/config`);
     if (channelRes.ok) {
       const backendConfigs = await channelRes.json();
-      const channelConfig = backendConfigs.find(c => c.key === 'channel');
-      if (channelConfig) {
-        currentUserConfig.channel = channelConfig.value;
-        document.getElementById('channel').value = channelConfig.value;
-        localStorage.setItem('userConfig', JSON.stringify(currentUserConfig));
-      }
+      // No need to load channel from backend as user config now manages it
+      // But could be used for other global settings in future
     }
   } catch (error) {
     console.error("Error fetching backend config:", error);
