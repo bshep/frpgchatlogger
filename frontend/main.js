@@ -125,7 +125,7 @@ function renderMessages(element, messages) {
   messages.forEach(msg => {
     const messageElement = document.createElement('div');
     messageElement.classList.add('list-group-item', 'list-group-item-action');
-    const timestamp = new Date(msg.timestamp).toLocaleTimeString(undefined, { timeZone: 'America/Chicago' });
+    const timestamp = new Date(msg.timestamp).toLocaleString(undefined, { timeZone: 'America/Chicago' });
     const channelInfo = activeChannel === 'advanced-search' ? `<small class="channel">(${msg.channel})</small>` : '';
     messageElement.innerHTML = `
       <div class="d-flex w-100 justify-content-between">
