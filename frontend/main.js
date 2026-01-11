@@ -236,7 +236,7 @@ async function fetchMentions() {
     }
 
     newMentions.forEach(newMention => {
-      newMention.timestamp = new Date(newMention.timestamp);
+      newMention.timestamp = new Date(newMention.timestamp+"-06:00");
       newMention.is_hidden = newMention.is_hidden || false;
       if (!localMentionsCache.some(m => m.id === newMention.id)) {
         localMentionsCache.push(newMention);
