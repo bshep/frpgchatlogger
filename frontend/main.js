@@ -15,10 +15,10 @@ const CHAT_SEARCH_BAR = document.getElementById('chat-search-bar');
 let activeChannel = 'trade'; // Default active channel
 
 let currentUserConfig = {
-  username: "SuperJ",
+  username: "YourUsername",
   channel: "trade", // This will now be primarily controlled by the active tab
   play_alert: true,
-  polling_interval: 30
+  polling_interval: 5, // in seconds
 };
 
 let localMentionsCache = []; // Initialize local cache for mentions
@@ -84,12 +84,12 @@ function loadConfigFromLocalStorage() {
   const storedConfig = localStorage.getItem('userConfig');
   if (storedConfig) {
     currentUserConfig = JSON.parse(storedConfig);
-    // Update form fields
-    document.getElementById('username').value = currentUserConfig.username;
-    document.getElementById('channel').value = currentUserConfig.channel;
-    document.getElementById('polling-interval').value = currentUserConfig.polling_interval;
-    document.getElementById('play-alert').checked = currentUserConfig.play_alert;
   }
+
+  // Update form fields
+  document.getElementById('username').value = currentUserConfig.username;
+  document.getElementById('polling-interval').value = currentUserConfig.polling_interval;
+  document.getElementById('play-alert').checked = currentUserConfig.play_alert;
 
   const storedMentions = localStorage.getItem('localMentionsCache');
   if (storedMentions) {
