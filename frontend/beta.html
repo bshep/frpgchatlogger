@@ -38,7 +38,7 @@
             const response = await fetch(`${BACKEND_URL}/api/me`);
             if (response.ok) {
               const userData = await response.json();
-              loginStatusElement.textContent = `Logged in as ${userData.username}#${userData.discriminator}`;
+              loginStatusElement.textContent = `Logged in as ${userData.username}`;
               discordDataElement.textContent = JSON.stringify(userData, null, 2); // Pretty-print the JSON
               loginButton.style.display = 'none'; // Hide login button if logged in
               logoutButton.style.display = 'block'; // Show logout button
