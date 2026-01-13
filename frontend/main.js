@@ -122,11 +122,12 @@ ADVANCED_SEARCH_FORM.addEventListener('submit', async (e) => {
 // --- Generic Message Renderer ---
 function renderMessages(element, messages) {
   element.innerHTML = '';
+  const selectedTab = document.getElementById('channel-tabs').getElementsByClassName("active")[0].dataset.channel || 'trade';
   messages.forEach(msg => {
     const messageElement = document.createElement('div');
     messageElement.classList.add('list-group-item', 'list-group-item-action');
     const timestamp = new Date(msg.timestamp+"-06:00").toLocaleString(undefined, { timeZone: 'America/Chicago' });
-    const channelInfo = activeChannel === 'advanced-search' ? `<small class="channel">(${msg.channel})</small>` : '';
+    const channelInfo = selectedTab === 'advanced-search' ? `<small class="channel">(${msg.channel})</small>` : '';
     messageElement.innerHTML = `
       <div class="d-flex w-100 justify-content-between">
         <small class="timestamp">${timestamp}</small>
