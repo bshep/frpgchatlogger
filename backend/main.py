@@ -227,7 +227,7 @@ def startup_event():
 
     scheduler = BackgroundScheduler()
     # Schedule to run every 3 seconds
-    scheduler.add_job(scheduled_log_parsing, 'interval', seconds=3)
+    scheduler.add_job(scheduled_log_parsing, 'interval', seconds=5)
     # Schedule to run once immediately
     scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1))
     scheduler.start()
@@ -331,7 +331,9 @@ async def discord_callback(code: str):
     access_token = token_response.json().get("access_token")
     if not access_token:
         raise HTTPException(status_code=400, detail="Could not retrieve access token from Discord.")
-
+    
+    print("Access Token:", access_token)
+    
     # 2. Use the access token to fetch user's guilds
     guilds_url = "https://discord.com/api/v10/users/@me/guilds"
     guilds_headers = {"Authorization": f"Bearer {access_token}"}
