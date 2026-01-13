@@ -1,15 +1,17 @@
-import requests
-from bs4 import BeautifulSoup
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, inspect, text
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from apscheduler.schedulers.background import BackgroundScheduler
+import os
 from datetime import datetime, timedelta, timezone # Consolidated import
 import re
 from typing import List, Optional
 from urllib.parse import urljoin
+import requests
+from bs4 import BeautifulSoup
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, inspect, text
+from sqlalchemy.orm import sessionmaker, Session, declarative_base
+from apscheduler.schedulers.background import BackgroundScheduler
 from dateutil.parser import parse # Import for robust datetime parsing
 import pytz # Import pytz for timezone handling
 
@@ -290,9 +292,79 @@ def get_all_configs(db: Session = Depends(get_db)):
 # def update_channel_config(key: str, value: str, db: Session = Depends(get_db)):
 #     # Allow 'channels_to_track' to be configured via the API.
 #     if key not in ["channels_to_track"]:
-#         raise HTTPException(status_code=400, detail=f"Configuration for '{key}' cannot be set via this endpoint.")
-#     set_config(db, key, value)
-#     return ConfigModel(key=key, value=value)
+
+import secrets
+from fastapi.responses import RedirectResponse
+
+# ... (previous code) ...
+
+# In-memory cache for storing guild data against a temporary session token
+temp_sessions = {}
+
+@app.get("/api/discord-callback")
+async def discord_callback(code: str):
+    DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "1460736312301719683")
+    DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+    # This redirect URI must exactly match the one in your Discord app settings
+    REDIRECT_URI = "http://chat.frpgchatterbot.free.nf/api/discord-callback"
+    # The URI to redirect back to your frontend beta page
+    FRONTEND_REDIRECT_URI = "/beta.html"
+
+    if not DISCORD_CLIENT_SECRET:
+        raise HTTPException(status_code=500, detail="Discord client secret is not configured on the server.")
+
+    # 1. Exchange authorization code for an access token
+    token_url = "https://discord.com/api/oauth2/token"
+    token_data = {
+        "client_id": DISCORD_CLIENT_ID,
+        "client_secret": DISCORD_CLIENT_SECRET,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": REDIRECT_URI,
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    
+    token_response = requests.post(token_url, data=token_data, headers=headers)
+    if not token_response.ok:
+        return JSONResponse(status_code=token_response.status_code, content={"detail": "Failed to get token from Discord", "discord_error": token_response.json()})
+    
+    access_token = token_response.json().get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Could not retrieve access token from Discord.")
+
+    # 2. Use the access token to fetch user's guilds
+    guilds_url = "https://discord.com/api/v10/users/@me/guilds"
+    guilds_headers = {"Authorization": f"Bearer {access_token}"}
+    
+    guilds_response = requests.get(guilds_url, headers=guilds_headers)
+    if not guilds_response.ok:
+        return JSONResponse(status_code=guilds_response.status_code, content={"detail": "Failed to get guilds from Discord", "discord_error": guilds_response.json()})
+
+    # 3. Store data in a temporary session and redirect back to frontend
+    session_token = secrets.token_hex(16)
+    temp_sessions[session_token] = guilds_response.json()
+    
+    # Set a timer to clear the session data after a short period (e.g., 5 minutes)
+    # This is a simple cleanup for the in-memory cache
+    def cleanup_session(token):
+        if token in temp_sessions:
+            del temp_sessions[token]
+            print(f"Cleaned up session for token: {token}")
+    
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(cleanup_session, 'date', run_date=datetime.now() + timedelta(minutes=5), args=[session_token])
+    scheduler.start()
+
+    return RedirectResponse(url=f"{FRONTEND_REDIRECT_URI}?session_token={session_token}")
+
+@app.get("/api/me/guilds")
+async def get_my_guilds(session_token: str):
+    if session_token in temp_sessions:
+        # Retrieve data, delete the token, and return data
+        guild_data = temp_sessions.pop(session_token)
+        return JSONResponse(content=guild_data)
+    else:
+        raise HTTPException(status_code=404, detail="Session not found or has expired.")
 
 @app.get("/")
 def read_root():
