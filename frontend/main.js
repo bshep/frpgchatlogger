@@ -25,7 +25,7 @@ const ADVANCED_SEARCH_CHANNEL_FILTER = document.getElementById('advanced-search-
 let activeChannel = 'trade'; // Default active channel
 let currentUserConfig = {
   username: "YourUsername",
-  play_alert: true,
+  play_alert: false,
   polling_interval: 5, // in seconds
 };
 let localMentionsCache = [];
@@ -125,7 +125,7 @@ function renderMessages(element, messages) {
   messages.forEach(msg => {
     const messageElement = document.createElement('div');
     messageElement.classList.add('list-group-item', 'list-group-item-action');
-    const timestamp = new Date(msg.timestamp+"-06:00").toLocaleTimeString(undefined, { timeZone: 'America/Chicago' });
+    const timestamp = new Date(msg.timestamp+"-06:00").toLocaleString(undefined, { timeZone: 'America/Chicago' });
     const channelInfo = activeChannel === 'advanced-search' ? `<small class="channel">(${msg.channel})</small>` : '';
     messageElement.innerHTML = `
       <div class="d-flex w-100 justify-content-between">
@@ -236,7 +236,7 @@ async function fetchMentions() {
     }
 
     newMentions.forEach(newMention => {
-      newMention.timestamp = new Date(newMention.timestamp);
+      newMention.timestamp = new Date(newMention.timestamp+"-06:00");
       newMention.is_hidden = newMention.is_hidden || false;
       if (!localMentionsCache.some(m => m.id === newMention.id)) {
         localMentionsCache.push(newMention);
@@ -268,7 +268,7 @@ function displayMentions() {
       const mentionElement = document.createElement('div');
       mentionElement.id = `mention-${mention.id}`;
       mentionElement.classList.add('list-group-item', 'list-group-item-action', 'd-flex', 'justify-content-between', 'align-items-start');
-      const timestamp = new Date(mention.timestamp).toLocaleTimeString(undefined, { timeZone: 'America/Chicago' });
+      const timestamp = new Date(mention.timestamp).toLocaleString(undefined, { timeZone: 'America/Chicago' });
       mentionElement.innerHTML = `
         <div class="flex-grow-1">
             <div class="d-flex w-100 justify-content-between">
@@ -283,7 +283,9 @@ function displayMentions() {
       `;
       MENTIONS_LOG_ELEMENT.appendChild(mentionElement);
     });
-    MENTIONS_LOG_ELEMENT.scrollTop = 0;
+    if (MENTIONS_LOG_ELEMENT.scrollTop < 50 ) {
+      MENTIONS_LOG_ELEMENT.scrollTop = 0;
+    }
 }
 
 MENTIONS_LOG_ELEMENT.addEventListener('click', async (e) => {
