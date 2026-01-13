@@ -366,7 +366,7 @@ def read_root():
     return {"status": "FRPG Chat Logger is running"}
 
 @app.get("/api/discord-callback")
-async def discord_callback(code: str, db: Session = Depends(get_db)):
+async def discord_callback(request: Request, code: str, db: Session = Depends(get_db)):
     DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
     DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
     REDIRECT_URI = "http://chat.frpgchatterbot.free.nf/api/discord-callback"
@@ -413,13 +413,21 @@ async def discord_callback(code: str, db: Session = Depends(get_db)):
     db.commit()
 
     response = RedirectResponse(url=FRONTEND_REDIRECT_URI)
-    response.set_cookie(key=SESSION_COOKIE_NAME, value=session_token, expires=session_expiry, httponly=True, samesite="Lax", secure=True)
+    
+    # Set the secure flag based on the request's scheme.
+    # FastAPI correctly handles X-Forwarded-Proto headers from reverse proxies.
+    secure_cookie = request.url.scheme == "https"
+
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME, 
+        value=session_token, 
+        expires=session_expiry, 
+        httponly=True, 
+        samesite="Lax", 
+        secure=secure_cookie
+    )
     return response
 
 @app.get("/api/me", response_model=UserModel)
 async def get_me(current_user: DiscordUser = Depends(get_current_user)):
     return UserModel(id=current_user.id, username=current_user.username, avatar=current_user.avatar, guilds=json.loads(current_user.guilds_data))
-
-@app.get("/")
-def read_root():
-    return {"status": "FRPG Chat Logger is running"}
