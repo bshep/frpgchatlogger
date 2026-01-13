@@ -1,27 +1,51 @@
 import os
-from datetime import datetime, timedelta, timezone # Consolidated import
+import json
 import re
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from urllib.parse import urljoin
-import requests
-from bs4 import BeautifulSoup
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, inspect, text
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from apscheduler.schedulers.background import BackgroundScheduler
-from dateutil.parser import parse # Import for robust datetime parsing
-import pytz # Import pytz for timezone handling
 
-# Database Configuration
+import pytz
+import requests
+from apscheduler.schedulers.background import BackgroundScheduler
+from bs4 import BeautifulSoup
+from cryptography.fernet import Fernet
+from dateutil.parser import parse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel
+from sqlalchemy import \
+    Boolean,
+    Column,
+    DateTime,
+    Integer,
+    String,
+    create_engine,
+    inspect,
+    text
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
+
+# --- Environment and Encryption Setup ---
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+if not ENCRYPTION_KEY:
+    raise RuntimeError("ENCRYPTION_KEY environment variable not set. Generate one using: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"")
+fernet = Fernet(ENCRYPTION_KEY.encode())
+
+def encrypt(data: str) -> str:
+    return fernet.encrypt(data.encode()).decode()
+
+def decrypt(token: str) -> str:
+    return fernet.decrypt(token.encode()).decode()
+
+# --- Database Configuration ---
 DATABASE_URL = "sqlite:///./chatlog.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# SQLAlchemy Models
+# --- SQLAlchemy Models ---
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True, index=True)
@@ -44,21 +68,35 @@ class Mention(Base):
     message_html = Column(String)
     timestamp = Column(DateTime)
     read = Column(Boolean, default=False)
-    is_hidden = Column(Boolean, default=False) # New column
-    channel = Column(String, default="trade") # Added channel column
+    is_hidden = Column(Boolean, default=False)
+    channel = Column(String, default="trade")
 
-# Pydantic Models
-class MessageCreate(BaseModel):
+class DiscordUser(Base):
+    __tablename__ = "discord_users"
+    id = Column(String, primary_key=True, index=True) # Discord User ID
+    username = Column(String, nullable=False)
+    discriminator = Column(String, nullable=False)
+    avatar = Column(String, nullable=True)
+    encrypted_access_token = Column(String, nullable=False)
+    encrypted_refresh_token = Column(String, nullable=False)
+    token_expiry = Column(DateTime, nullable=False)
+    guilds_data = Column(String) # Store as JSON string
+
+class PersistentSession(Base):
+    __tablename__ = "persistent_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    session_token = Column(String, unique=True, index=True, nullable=False)
+    discord_id = Column(String, index=True, nullable=False)
+    expiry_date = Column(DateTime, nullable=False)
+
+# --- Pydantic Models ---
+class MessageModel(BaseModel):
+    id: int
     timestamp: datetime
     username: str
     message_html: str
     channel: str
-
-class MessageModel(MessageCreate):
-    id: int
-
-    class Config:
-        from_attributes = True
+    class Config: from_attributes = True
 
 class MentionModel(BaseModel):
     id: int
@@ -67,17 +105,28 @@ class MentionModel(BaseModel):
     message_html: str
     timestamp: datetime
     read: bool
-    is_hidden: bool # New field
-    channel: str # Added channel field
-
-    class Config:
-        from_attributes = True
+    is_hidden: bool
+    channel: str
+    class Config: from_attributes = True
 
 class ConfigModel(BaseModel):
     key: str
     value: str
 
-# FastAPI App
+class GuildModel(BaseModel):
+    id: str
+    name: str
+    icon: Optional[str]
+    owner: bool
+    permissions: str
+
+class UserModel(BaseModel):
+    id: str
+    username: str
+    avatar: Optional[str]
+    guilds: List[GuildModel]
+
+# --- FastAPI App Setup ---
 app = FastAPI()
 
 # CORS Middleware
@@ -89,7 +138,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+SESSION_COOKIE_NAME = "frpg_chatterbot_session"
 
+# --- Database Dependency ---
 def get_db():
     db = SessionLocal()
     try:
@@ -112,6 +163,7 @@ def set_config(db: Session, key: str, value: str):
 # Define Chicago timezone
 chicago_tz = pytz.timezone('America/Chicago')
 
+# --- Background Tasks ---
 def parse_single_channel_log(db: Session, channel_to_parse: str):
     """Parses the chat log for a single specified channel."""
     BASE_URL = "http://farmrpg.com/"
@@ -204,6 +256,21 @@ def scheduled_log_parsing():
     finally:
         db.close()
 
+def cleanup_expired_persistent_sessions():
+    """Scheduled job to delete expired persistent user sessions from the database."""
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        expired_count = db.query(PersistentSession).filter(PersistentSession.expiry_date <= now).delete()
+        if expired_count > 0:
+            db.commit()
+            print(f"Cleaned up {expired_count} expired persistent user sessions.")
+    except Exception as e:
+        print(f"Error during expired persistent session cleanup: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
 @app.on_event("startup")
 def startup_event():
     Base.metadata.create_all(bind=engine)
@@ -213,21 +280,10 @@ def startup_event():
         set_config(db, "channels_to_track", "trade,giveaways")
     db.close()
 
-    # Manual migration for 'is_hidden' column
-    with engine.connect() as connection:
-        inspector = inspect(engine)
-        if inspector.has_table("mentions"):
-            columns = inspector.get_columns('mentions')
-            column_names = [col['name'] for col in columns]
-            if 'is_hidden' not in column_names:
-                with connection.begin():
-                    connection.execute(text("ALTER TABLE mentions ADD COLUMN is_hidden BOOLEAN DEFAULT FALSE"))
-                print("Added 'is_hidden' column to 'mentions' table.")
-
-
     scheduler = BackgroundScheduler()
     # Schedule to run every 3 seconds
     scheduler.add_job(scheduled_log_parsing, 'interval', seconds=5)
+    scheduler.add_job(cleanup_expired_persistent_sessions, 'interval', hours=1)
     # Schedule to run once immediately
     scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1))
     scheduler.start()
@@ -293,80 +349,84 @@ def get_all_configs(db: Session = Depends(get_db)):
 #     # Allow 'channels_to_track' to be configured via the API.
 #     if key not in ["channels_to_track"]:
 
-import secrets
-from fastapi.responses import RedirectResponse
+# --- Authentication Dependency ---
+async def get_current_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
+    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
-# ... (previous code) ...
+    session = db.query(PersistentSession).filter(PersistentSession.session_token == session_token).first()
+    if not session or session.expiry_date <= datetime.now(timezone.utc):
+        if session:
+            db.delete(session)
+            db.commit()
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
 
-# In-memory cache for storing guild data against a temporary session token
-temp_sessions = {}
+    user = db.query(DiscordUser).filter(DiscordUser.id == session.discord_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found for session")
+    
+    return user
+
+# --- API Endpoints ---
+@app.get("/")
+def read_root():
+    return {"status": "FRPG Chat Logger is running"}
 
 @app.get("/api/discord-callback")
-async def discord_callback(code: str):
-    DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "1460736312301719683")
+async def discord_callback(code: str, db: Session = Depends(get_db)):
+    DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
     DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
-    # This redirect URI must exactly match the one in your Discord app settings
     REDIRECT_URI = "http://chat.frpgchatterbot.free.nf/api/discord-callback"
-    # The URI to redirect back to your frontend beta page
     FRONTEND_REDIRECT_URI = "/beta.html"
 
-    if not DISCORD_CLIENT_SECRET:
-        raise HTTPException(status_code=500, detail="Discord client secret is not configured on the server.")
+    if not all([DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET]):
+        raise HTTPException(status_code=500, detail="Discord client credentials are not configured on the server.")
 
-    # 1. Exchange authorization code for an access token
+    # Exchange code for token
     token_url = "https://discord.com/api/oauth2/token"
-    token_data = {
-        "client_id": DISCORD_CLIENT_ID,
-        "client_secret": DISCORD_CLIENT_SECRET,
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": REDIRECT_URI,
-    }
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    token_data = { "client_id": DISCORD_CLIENT_ID, "client_secret": DISCORD_CLIENT_SECRET, "grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI }
+    token_response = requests.post(token_url, data=token_data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    token_response.raise_for_status()
+    token_json = token_response.json()
     
-    token_response = requests.post(token_url, data=token_data, headers=headers)
-    if not token_response.ok:
-        return JSONResponse(status_code=token_response.status_code, content={"detail": "Failed to get token from Discord", "discord_error": token_response.json()})
-    
-    access_token = token_response.json().get("access_token")
-    if not access_token:
-        raise HTTPException(status_code=400, detail="Could not retrieve access token from Discord.")
-    
-    print("Access Token:", access_token)
-    
-    # 2. Use the access token to fetch user's guilds
-    guilds_url = "https://discord.com/api/v10/users/@me/guilds"
-    guilds_headers = {"Authorization": f"Bearer {access_token}"}
-    
-    guilds_response = requests.get(guilds_url, headers=guilds_headers)
-    if not guilds_response.ok:
-        return JSONResponse(status_code=guilds_response.status_code, content={"detail": "Failed to get guilds from Discord", "discord_error": guilds_response.json()})
+    # Fetch user identity and guilds
+    user_url = "https://discord.com/api/v10/users/@me"
+    auth_headers = {"Authorization": f"Bearer {token_json['access_token']}"}
+    user_response = requests.get(user_url, headers=auth_headers)
+    user_response.raise_for_status()
+    user_data = user_response.json()
+    discord_id = user_data["id"]
 
-    # 3. Store data in a temporary session and redirect back to frontend
-    session_token = secrets.token_hex(16)
-    temp_sessions[session_token] = guilds_response.json()
-    
-    # Set a timer to clear the session data after a short period (e.g., 5 minutes)
-    # This is a simple cleanup for the in-memory cache
-    def cleanup_session(token):
-        if token in temp_sessions:
-            del temp_sessions[token]
-            print(f"Cleaned up session for token: {token}")
-    
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(cleanup_session, 'date', run_date=datetime.now() + timedelta(minutes=5), args=[session_token])
-    scheduler.start()
+    guilds_response = requests.get(f"{user_url}/guilds", headers=auth_headers)
+    guilds_response.raise_for_status()
+    guilds_data = guilds_response.json()
 
-    return RedirectResponse(url=f"{FRONTEND_REDIRECT_URI}?session_token={session_token}")
+    # Create or update user in database
+    db_user = db.query(DiscordUser).filter(DiscordUser.id == discord_id).first()
+    token_expiry = datetime.now(timezone.utc) + timedelta(seconds=token_json["expires_in"])
+    if not db_user:
+        db_user = DiscordUser(id=discord_id)
+        db.add(db_user)
 
-@app.get("/api/me/guilds")
-async def get_my_guilds(session_token: str):
-    if session_token in temp_sessions:
-        # Retrieve data, delete the token, and return data
-        guild_data = temp_sessions.pop(session_token)
-        return JSONResponse(content=guild_data)
-    else:
-        raise HTTPException(status_code=404, detail="Session not found or has expired.")
+    db_user.username, db_user.discriminator, db_user.avatar = user_data["username"], user_data["discriminator"], user_data.get("avatar")
+    db_user.encrypted_access_token, db_user.encrypted_refresh_token = encrypt(token_json["access_token"]), encrypt(token_json["refresh_token"])
+    db_user.token_expiry, db_user.guilds_data = token_expiry, json.dumps(guilds_data)
+    
+    # Create long-lived session
+    session_token = secrets.token_hex(32)
+    session_expiry = datetime.now(timezone.utc) + timedelta(days=180) # ~6 months
+    new_session = PersistentSession(session_token=session_token, discord_id=discord_id, expiry_date=session_expiry)
+    db.add(new_session)
+    db.commit()
+
+    response = RedirectResponse(url=FRONTEND_REDIRECT_URI)
+    response.set_cookie(key=SESSION_COOKIE_NAME, value=session_token, expires=session_expiry, httponly=True, samesite="Lax", secure=True)
+    return response
+
+@app.get("/api/me", response_model=UserModel)
+async def get_me(current_user: DiscordUser = Depends(get_current_user)):
+    return UserModel(id=current_user.id, username=current_user.username, avatar=current_user.avatar, guilds=json.loads(current_user.guilds_data))
 
 @app.get("/")
 def read_root():

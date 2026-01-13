@@ -5,3 +5,5 @@ beautifulsoup4
 apscheduler
 sqlalchemy
 python-dateutil
+python-dotenv
+cryptography

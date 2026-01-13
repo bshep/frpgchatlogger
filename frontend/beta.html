@@ -9,45 +9,70 @@
   <body>
     <div id="app" class="container mt-4">
         <h1>Discord Guild Identification (Beta)</h1>
-        <p>Click the button below to log in with Discord and see your guild memberships.</p>
-        <a href="https://discord.com/oauth2/authorize?client_id=1460736312301719683&response_type=code&redirect_uri=http%3A%2F%2Fchat.frpgchatterbot.free.nf%2Fapi%2Fdiscord-callback&scope=identify+guilds" class="btn btn-primary">
+        <p id="login-status">Checking login status...</p>
+        <a id="login-button" href="/api/discord-callback" class="btn btn-primary">
             Login with Discord
         </a>
+        <button id="logout-button" class="btn btn-danger" style="display: none;">Logout</button>
         <hr>
-        <h2>Data Returned from Discord:</h2>
+        <h2>Your Discord Data:</h2>
         <pre id="discord-data" class="bg-dark text-light p-3 rounded">
-(Login with Discord to see your guild data here)
+(Data will appear here after successful login)
         </pre>
     </div>
 
     <script>
+      const BACKEND_URL = ""; // Assuming frontend and backend are on the same domain for relative paths
+      const SESSION_COOKIE_NAME = "frpg_chatterbot_session"; // Must match backend
+
       window.addEventListener('DOMContentLoaded', async () => {
         const discordDataElement = document.getElementById('discord-data');
-        const params = new URLSearchParams(window.location.search);
-        const sessionToken = params.get('session_token');
+        const loginButton = document.getElementById('login-button');
+        const logoutButton = document.getElementById('logout-button');
+        const loginStatusElement = document.getElementById('login-status');
 
-        if (sessionToken) {
-          discordDataElement.textContent = 'Fetching your guild data...';
-
+        async function fetchUserData() {
+          loginStatusElement.textContent = 'Checking Discord login status...';
           try {
-            // Use the session token to fetch the actual guild data from the new backend endpoint
-            const response = await fetch(`/api/me/guilds?session_token=${sessionToken}`);
-            
+            const response = await fetch(`${BACKEND_URL}/api/me`);
             if (response.ok) {
-              const data = await response.json();
-              discordDataElement.textContent = JSON.stringify(data, null, 2); // Pretty-print the JSON
+              const userData = await response.json();
+              loginStatusElement.textContent = `Logged in as ${userData.username}#${userData.discriminator}`;
+              discordDataElement.textContent = JSON.stringify(userData, null, 2); // Pretty-print the JSON
+              loginButton.style.display = 'none'; // Hide login button if logged in
+              logoutButton.style.display = 'block'; // Show logout button
+            } else if (response.status === 401) {
+              loginStatusElement.textContent = 'Not logged in with Discord.';
+              discordDataElement.textContent = '(Login with Discord to see your guild data here)';
+              loginButton.style.display = 'block'; // Show login button
+              logoutButton.style.display = 'none'; // Hide logout button
             } else {
               const errorData = await response.json();
-              discordDataElement.textContent = `Error fetching data: ${errorData.detail || 'Unknown error'}`;
+              loginStatusElement.textContent = `Error: ${errorData.detail || 'Unknown error'}`;
+              discordDataElement.textContent = `Error fetching data: ${JSON.stringify(errorData, null, 2)}`;
+              loginButton.style.display = 'block';
+              logoutButton.style.display = 'none';
             }
           } catch (error) {
-            console.error('Failed to fetch guild data:', error);
-            discordDataElement.textContent = 'An error occurred while trying to fetch your data.';
-          } finally {
-            // Clean the session_token from the URL for a better user experience
-            history.replaceState(null, '', window.location.pathname);
+            console.error('Failed to fetch user data:', error);
+            loginStatusElement.textContent = 'An error occurred while fetching user data.';
+            discordDataElement.textContent = 'Please ensure the backend is running and configured correctly.';
+            loginButton.style.display = 'block';
+            logoutButton.style.display = 'none';
           }
         }
+
+        async function logout() {
+          // Send a request to the backend to clear the session cookie, or simply clear locally
+          // For a true logout, the backend should provide an endpoint to invalidate the session token.
+          // For now, we clear the client-side cookie which effectively logs out for HttpOnly cookies.
+          document.cookie = `${SESSION_COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+          // Optionally redirect to a logged-out state or main page
+          window.location.reload(); 
+        }
+
+        logoutButton.addEventListener('click', logout);
+        fetchUserData(); // Initial check
       });
     </script>
   </body>
