@@ -348,7 +348,7 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> D
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     session = db.query(PersistentSession).filter(PersistentSession.session_token == session_token).first()
-    if not session or session.expiry_date <= datetime.now(timezone.utc):
+    if not session or session.expiry_date.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
         if session:
             db.delete(session)
             db.commit()
