@@ -16,15 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import \
-    Boolean,
-    Column,
-    DateTime,
-    Integer,
-    String,
-    create_engine,
-    inspect,
-    text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text 
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 # --- Environment and Encryption Setup ---
