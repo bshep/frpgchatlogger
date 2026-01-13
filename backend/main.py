@@ -118,6 +118,11 @@ class UserModel(BaseModel):
     avatar: Optional[str]
     guilds: List[GuildModel]
 
+class AuthStatusModel(BaseModel):
+    username: str
+    is_allowed: bool
+
+
 # --- FastAPI App Setup ---
 app = FastAPI()
 
@@ -270,6 +275,11 @@ def startup_event():
     # Set default channels to track if not already configured
     if not get_config(db, "channels_to_track"):
         set_config(db, "channels_to_track", "trade,giveaways")
+    # Set default allowed lists if not already configured
+    if not get_config(db, "allowed_users"):
+        set_config(db, "allowed_users", "")
+    if not get_config(db, "allowed_guilds"):
+        set_config(db, "allowed_guilds", "")
     db.close()
 
     scheduler = BackgroundScheduler()
@@ -428,6 +438,33 @@ async def discord_callback(request: Request, code: str, db: Session = Depends(ge
     )
     return response
 
-@app.get("/api/me", response_model=UserModel)
-async def get_me(current_user: DiscordUser = Depends(get_current_user)):
-    return UserModel(id=current_user.id, username=current_user.username, avatar=current_user.avatar, guilds=json.loads(current_user.guilds_data))
+@app.get("/api/me", response_model=AuthStatusModel)
+async def get_me(current_user: DiscordUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Checks if the currently logged-in user is authorized based on their
+    Discord ID or guild memberships.
+    """
+    # 1. Get allowed lists from DB config
+    allowed_users_str = get_config(db, "allowed_users", "")
+    allowed_guilds_str = get_config(db, "allowed_guilds", "")
+    
+    allowed_users = set(user.strip() for user in allowed_users_str.split(',') if user.strip())
+    allowed_guilds = set(guild.strip() for guild in allowed_guilds_str.split(',') if guild.strip())
+    
+    # 2. Get user's guilds from the stored JSON data
+    user_guilds = json.loads(current_user.guilds_data)
+    user_guild_ids = {guild['id'] for guild in user_guilds}
+    
+    # 3. Perform authorization checks
+    is_allowed = False
+    # Check if user ID is in the allowed list
+    if current_user.id in allowed_users:
+        is_allowed = True
+    # If not, check if they are in an allowed guild
+    elif allowed_guilds.intersection(user_guild_ids):
+        is_allowed = True
+        
+    return AuthStatusModel(
+        username=f"{current_user.username}#{current_user.discriminator}",
+        is_allowed=is_allowed
+    )
