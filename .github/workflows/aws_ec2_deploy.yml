@@ -51,9 +51,20 @@ jobs:
         # Ensure 'dist' matches your actual frontend build output directory.
         scp -o StrictHostKeyChecking=no -i deploy_key.pem -r frontend/dist/* $EC2_USER@$EC2_HOST:$DEPLOY_DIR/html/
 
-        # SSH into EC2 and run deployment commands
+        # Transfer the backup script to a temporary location
+        scp -o StrictHostKeyChecking=no -i deploy_key.pem scripts/backup_db.sh $EC2_USER@$EC2_HOST:/tmp/backup_db.sh
+
+        # SSH into EC2 to move scripts, run backup, deploy, and verify
         ssh -o StrictHostKeyChecking=no -i deploy_key.pem $EC2_USER@$EC2_HOST "
           set -e
+          echo 'Setting up scripts...'
+          sudo mv /tmp/backup_db.sh /usr/local/bin/backup_db.sh
+          sudo chmod +x /usr/local/bin/backup_db.sh
+
+          echo 'Running pre-deployment backup...'
+          # Run backup script, but don't fail deployment if it errors (e.g., DB doesn't exist yet)
+          /usr/local/bin/backup_db.sh || echo 'Backup script failed, continuing deployment.'
+
           echo 'Navigating to project root...'
           cd /var/www/frpgchatlogger/
 
@@ -67,5 +78,20 @@ jobs:
           sudo systemctl daemon-reload
           sudo systemctl restart frpgchatlogger_backend.service
           sudo systemctl restart nginx
+          
+          echo 'Verifying cron job...'
+          if [ -f /etc/cron.d/frpgchatlogger-backup ]; then
+              echo 'Cron job file found. Contents:'
+              sudo cat /etc/cron.d/frpgchatlogger-backup
+          else
+              echo 'Creating cron job file...'
+              echo '# Run database backup every 12 hours at midnight and noon
+              0 0,12 * * * ec2-user /usr/local/bin/backup_db.sh >> /var/log/cron.log 2>&1
+              ' > /tmp/frpgchatlogger-backup
+              sudo mv /tmp/frpgchatlogger-backup /etc/cron.d/frpgchatlogger-backup
+              sudo chmod 644 /etc/cron.d/frpgchatlogger-backup
+              echo 'Cron job file created.'
+          fi
+
           echo 'Deployment successful!'
         "

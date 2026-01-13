@@ -18,16 +18,9 @@ echo "Starting User Data script for Amazon Linux 2023..."
 # 1. Update System
 sudo dnf update -y
 
-# 2. Install Python, pip, Node.js, and Nginx
-# Python 3 and pip are typically pre-installed or easily added on AL2023.
-# Ensure both python3 and python3-pip are installed.
-sudo dnf install -y python3 python3-pip
-
-# Install Node.js using dnf module stream for AL2023
-sudo dnf install -y nodejs
-
-# Install Nginx
-sudo dnf install -y nginx
+# 2. Install Dependencies
+echo "Installing dependencies: python, pip, nodejs, nginx, sqlite..."
+sudo dnf install -y python3 python3-pip nodejs nginx sqlite
 
 # 3. Install Gunicorn/Uvicorn globally for initial setup
 # This allows the systemd service to find them before venv is fully set up by GitHub Actions.
@@ -94,6 +87,13 @@ SYSTEMD_SERVICE
 
 # Enable systemd service. It will start successfully once the application code is deployed.
 sudo systemctl enable frpgchatlogger_backend.service
+
+# 7. Set up Cron Job for Backups
+echo "Setting up cron job for backups..."
+cat << 'CRON_JOB' | sudo tee /etc/cron.d/frpgchatlogger-backup
+# Run database backup every 12 hours at midnight and noon
+0 0,12 * * * ec2-user /usr/local/bin/backup_db.sh >> /var/log/cron.log 2>&1
+CRON_JOB
 
 echo "User Data script finished."
 EOF
