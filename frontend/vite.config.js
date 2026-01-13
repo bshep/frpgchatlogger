@@ -1,9 +1,14 @@
-import { defineConfig } from "vite";
+import { defineConfig } from 'vite';
 
 export default defineConfig({
-    build: {
-        outDir: "dist",
-        sourcemap: true,
-        minify: false,
+  build: {
+    rollupOptions: {
+      input: {
+        main: 'index.html', // Your main application entry point
+        beta: 'beta.html', // Your new beta page entry point
+      },
+      sourceMap: true, // Enable source maps for easier debugging
+      minify: false, // Disable minification for better readability
     },
+  },
 });
