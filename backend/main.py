@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text 
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, tuple_
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 # --- Environment and Encryption Setup ---
@@ -161,11 +161,6 @@ def set_config(db: Session, key: str, value: str):
 chicago_tz = pytz.timezone('America/Chicago')
 
 # --- Background Tasks ---
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, tuple_
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
-
-# ... (imports) ...
-
 def parse_single_channel_log(db: Session, channel_to_parse: str):
     """Parses the chat log for a single specified channel using a batch approach."""
     BASE_URL = "http://farmrpg.com/"
@@ -190,45 +185,39 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
                 try:
                     full_timestamp_str = f"{timestamp_str} {datetime.now().year}"
                     naive_timestamp = parse(full_timestamp_str)
-                    timestamp = chicago_tz.localize(naive_timestamp, is_dst=None)
+                    aware_timestamp = chicago_tz.localize(naive_timestamp, is_dst=None)
                     
-                    # Prepare data but don't query DB yet
                     potential_messages.append({
-                        "timestamp": timestamp,
+                        "naive_timestamp": naive_timestamp,
+                        "aware_timestamp": aware_timestamp,
                         "username": username,
-                        "title_element": title
+                        "title_element": title if title else '', # Use a copy to avoid modification issues
                     })
                 except ValueError:
                     continue
         
         if not potential_messages:
-            print(f"No new message formats found for channel '{channel_to_parse}'.")
             return
 
-        # Create a set of unique identifiers for the potential messages
-        potential_ids = {(msg["timestamp"], msg["username"]) for msg in potential_messages}
-
-        # Perform one query to get all existing messages that match our potential new ones
+        # Use naive datetimes for the existence check
+        potential_ids = {(msg["naive_timestamp"], msg["username"]) for msg in potential_messages}
         existing_messages = db.query(Message.timestamp, Message.username).filter(
             Message.channel == channel_to_parse,
             tuple_(Message.timestamp, Message.username).in_(potential_ids)
         ).all()
         existing_ids = set(existing_messages)
 
-        # Process only the messages that are actually new
         new_messages_to_add = []
         for msg_data in potential_messages:
-            if (msg_data["timestamp"], msg_data["username"]) not in existing_ids:
+            if (msg_data["naive_timestamp"], msg_data["username"]) not in existing_ids:
                 new_messages_to_add.append(msg_data)
 
         if not new_messages_to_add:
-            print(f"No new messages to insert for channel '{channel_to_parse}'.")
             return
 
         for new_msg_data in new_messages_to_add:
             title = new_msg_data["title_element"]
             
-            # Reprocess HTML content since it was modified in the first loop
             for a_tag in title.find_all('a'):
                 if a_tag.has_attr('href'):
                     a_tag['href'] = urljoin(BASE_URL, a_tag['href'])
@@ -242,37 +231,36 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
             message_content_html = str(title)
 
             new_message = Message(
-                timestamp=new_msg_data["timestamp"],
+                timestamp=new_msg_data["aware_timestamp"], # Insert the aware timestamp
                 username=new_msg_data["username"],
                 message_html=message_content_html,
                 channel=channel_to_parse
             )
             db.add(new_message)
-            # We must flush to get the ID for the mention's foreign key
             db.flush() 
 
             mentioned_users = re.findall(r'@(\w+)', message_text_for_mention_check)
             for mentioned_user in mentioned_users:
-                # This part is still N+1, but will only run for truly new messages with mentions.
-                # A more complex solution could batch this as well, but this is a major improvement.
                 existing_mention = db.query(Mention).filter_by(message_id=new_message.id, mentioned_user=mentioned_user).first()
                 if not existing_mention:
                     db.add(Mention(
                         message_id=new_message.id,
                         mentioned_user=mentioned_user,
                         message_html=message_content_html,
-                        timestamp=new_msg_data["timestamp"],
+                        timestamp=new_msg_data["aware_timestamp"], # Use aware timestamp
                         read=False,
                         is_hidden=False,
                         channel=channel_to_parse
                     ))
         
         db.commit()
-        print(f"Processed {len(new_messages_to_add)} new messages for channel '{channel_to_parse}' successfully at {datetime.now()}")
+        print(f"Processed {len(new_messages_to_add)} new messages for channel '{channel_to_parse}' successfully.")
     except Exception as e:
         db.rollback()
         print(f"Error parsing chat log for channel '{channel_to_parse}': {e}")
-
+        # Print stack trace for debugging
+        import traceback
+        traceback.print_exc()
 
 def scheduled_log_parsing():
     """Scheduled task to parse logs for all configured channels."""
@@ -500,29 +488,6 @@ def get_all_configs(db: Session = Depends(get_db)):
 #     # Allow 'channels_to_track' to be configured via the API.
 #     if key not in ["channels_to_track"]:
 
-# --- Authentication / Authorization Helpers ---
-def is_user_allowed(user: DiscordUser, db: Session) -> bool:
-    """Checks if a user is in the allowed users list or in an allowed guild."""
-    if not user:
-        return False
-
-    allowed_users_str = get_config(db, "allowed_users", "")
-    allowed_guilds_str = get_config(db, "allowed_guilds", "")
-    
-    allowed_users = set(u.strip() for u in allowed_users_str.split(',') if u.strip())
-    allowed_guilds = set(g.strip() for g in allowed_guilds_str.split(',') if g.strip())
-
-    # 1. Check if user's ID is in the allowed list
-    if user.id in allowed_users:
-        return True
-
-    # 2. Check if any of the user's guilds are in the allowed list
-    user_guilds = json.loads(user.guilds_data)
-    user_guild_ids = {guild['id'] for guild in user_guilds}
-    if allowed_guilds.intersection(user_guild_ids):
-        return True
-    
-    return False
 
 
 
