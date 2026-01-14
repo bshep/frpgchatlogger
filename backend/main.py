@@ -452,7 +452,7 @@ async def discord_callback(request: Request, code: str, db: Session = Depends(ge
     DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
     DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
     REDIRECT_URI = "http://chat.frpgchatterbot.free.nf/api/discord-callback"
-    FRONTEND_REDIRECT_URI = "/beta.html"
+    FRONTEND_REDIRECT_URI = "/"
 
     if not all([DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET]):
         raise HTTPException(status_code=500, detail="Discord client credentials are not configured on the server.")
