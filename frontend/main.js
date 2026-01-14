@@ -371,7 +371,7 @@ function displayMentions() {
     }
 }
 
-function handleMentionsClick(e) {
+async function handleMentionsClick(e) {
   const deleteButton = e.target.closest('[data-action="delete-mention"]');
   if (deleteButton) {
     const mentionId = parseInt(deleteButton.dataset.mentionId, 10);
