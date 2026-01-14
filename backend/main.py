@@ -41,10 +41,10 @@ Base = declarative_base()
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime)
+    timestamp = Column(DateTime, index=True)
     username = Column(String, index=True)
     message_html = Column(String)
-    channel = Column(String, default="trade")
+    channel = Column(String, default="trade", index=True)
 
 class Config(Base):
     __tablename__ = "config"
@@ -58,7 +58,7 @@ class Mention(Base):
     message_id = Column(Integer, index=True)
     mentioned_user = Column(String, index=True)
     message_html = Column(String)
-    timestamp = Column(DateTime)
+    timestamp = Column(DateTime, index=True)
     read = Column(Boolean, default=False)
     is_hidden = Column(Boolean, default=False)
     channel = Column(String, default="trade")
@@ -79,7 +79,7 @@ class PersistentSession(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_token = Column(String, unique=True, index=True, nullable=False)
     discord_id = Column(String, index=True, nullable=False)
-    expiry_date = Column(DateTime, nullable=False)
+    expiry_date = Column(DateTime, nullable=False, index=True)
 
 # --- Pydantic Models ---
 class MessageModel(BaseModel):
@@ -268,9 +268,59 @@ def cleanup_expired_persistent_sessions():
     finally:
         db.close()
 
+def run_migrations(engine):
+    """
+    Checks for and creates missing indexes on existing tables.
+    This serves as a simple migration helper.
+    """
+    print("Running database migrations for indexes...")
+    inspector = inspect(engine)
+    
+    # --- Indexes for 'messages' table ---
+    try:
+        message_indexes = [index['name'] for index in inspector.get_indexes('messages')]
+        if 'ix_messages_timestamp' not in message_indexes:
+            with engine.connect() as connection:
+                with connection.begin():
+                    connection.execute(text('CREATE INDEX ix_messages_timestamp ON messages (timestamp)'))
+            print("Created index: ix_messages_timestamp")
+        if 'ix_messages_channel' not in message_indexes:
+            with engine.connect() as connection:
+                with connection.begin():
+                    connection.execute(text('CREATE INDEX ix_messages_channel ON messages (channel)'))
+            print("Created index: ix_messages_channel")
+    except Exception as e:
+        print(f"Could not create indexes for 'messages' table (may not exist yet): {e}")
+
+    # --- Indexes for 'mentions' table ---
+    try:
+        mention_indexes = [index['name'] for index in inspector.get_indexes('mentions')]
+        if 'ix_mentions_timestamp' not in mention_indexes:
+            with engine.connect() as connection:
+                with connection.begin():
+                    connection.execute(text('CREATE INDEX ix_mentions_timestamp ON mentions (timestamp)'))
+            print("Created index: ix_mentions_timestamp")
+    except Exception as e:
+        print(f"Could not create indexes for 'mentions' table (may not exist yet): {e}")
+
+    # --- Indexes for 'persistent_sessions' table ---
+    try:
+        session_indexes = [index['name'] for index in inspector.get_indexes('persistent_sessions')]
+        if 'ix_persistent_sessions_expiry_date' not in session_indexes:
+            with engine.connect() as connection:
+                with connection.begin():
+                    connection.execute(text('CREATE INDEX ix_persistent_sessions_expiry_date ON persistent_sessions (expiry_date)'))
+            print("Created index: ix_persistent_sessions_expiry_date")
+    except Exception as e:
+        print(f"Could not create indexes for 'persistent_sessions' table (may not exist yet): {e}")
+    
+    print("Index migration check complete.")
+
 @app.on_event("startup")
 def startup_event():
     Base.metadata.create_all(bind=engine)
+    run_migrations(engine) # Run migrations to create indexes if they don't exist
+
     db = SessionLocal()
     # Set default channels to track if not already configured
     if not get_config(db, "channels_to_track"):
