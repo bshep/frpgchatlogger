@@ -5,6 +5,7 @@ const isProduction = import.meta.env.PROD;
 console.log(`Environment: ${isProduction ? 'Production' : 'Development'}`);
 
 const BACKEND_URL = isProduction ? document.location.protocol + "//" + document.location.host : "http://localhost:8000";
+const SESSION_COOKIE_NAME = "frpg_chatterbot_session";
 
 // --- DOM Elements ---
 const CHAT_LOG_ELEMENT = document.getElementById('chat-log');
@@ -19,24 +20,54 @@ const ADVANCED_SEARCH_FORM = document.getElementById('advanced-search-form');
 const ADVANCED_SEARCH_INPUT = document.getElementById('advanced-search-input');
 const ADVANCED_SEARCH_RESULTS = document.getElementById('advanced-search-results');
 const ADVANCED_SEARCH_CHANNEL_FILTER = document.getElementById('advanced-search-channel-filter');
-
+const ADVANCED_SEARCH_TAB = document.getElementById('advanced-search-tab');
+const AUTH_STATUS_MESSAGE = document.getElementById('auth-status-message');
+const DISCORD_LOGIN_BUTTON = document.getElementById('discord-login-button');
+const DISCORD_LOGOUT_BUTTON = document.getElementById('discord-logout-button');
 
 // --- State ---
-let activeChannel = 'trade'; // Default active channel
+let activeChannel = 'trade';
+let authStatus = {
+  loggedIn: false,
+  isAllowed: false,
+  username: ''
+};
 let currentUserConfig = {
   username: "YourUsername",
   play_alert: false,
   polling_interval: 5, // in seconds
 };
 let localMentionsCache = [];
+let pollingIntervalId;
 
 // --- Initialization ---
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', initializeApp);
+
+async function initializeApp() {
   loadConfigFromLocalStorage();
   fetchBackendConfig();
-  startPolling();
+  await checkAuthStatus();
+  updateUIForAuth();
+  
+  // Initial data fetch and polling only if content is visible
+  if (CHANNEL_VIEW.style.display !== 'none') {
+    fetchChatLog();
+    fetchMentions();
+    startPolling();
+  }
+  
+  addEventListeners();
   setupAudioUnlock();
-});
+}
+
+function addEventListeners() {
+  CHAT_SEARCH_BAR.addEventListener('input', applyChatFilter);
+  CHANNEL_TABS.addEventListener('click', handleTabClick);
+  ADVANCED_SEARCH_FORM.addEventListener('submit', handleAdvancedSearch);
+  CONFIG_FORM.addEventListener('submit', handleConfigFormSubmit);
+  DISCORD_LOGOUT_BUTTON.addEventListener('click', logout);
+  MENTIONS_LOG_ELEMENT.addEventListener('click', handleMentionsClick);
+}
 
 function setupAudioUnlock() {
   const unlockAudio = () => {
@@ -63,9 +94,54 @@ function applyChatFilter() {
   });
 }
 
-CHAT_SEARCH_BAR.addEventListener('input', applyChatFilter);
+// --- Authentication and UI ---
+async function checkAuthStatus() {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/me`);
+    if (response.ok) {
+      const userData = await response.json();
+      authStatus.loggedIn = true;
+      authStatus.isAllowed = userData.is_allowed;
+      authStatus.username = userData.username;
+    } else {
+      authStatus.loggedIn = false;
+      authStatus.isAllowed = false;
+    }
+  } catch (error) {
+    console.error("Auth check failed:", error);
+    authStatus.loggedIn = false;
+    authStatus.isAllowed = false;
+  }
+}
 
-CHANNEL_TABS.addEventListener('click', (e) => {
+function updateUIForAuth() {
+  if (authStatus.loggedIn) {
+    AUTH_STATUS_MESSAGE.textContent = `Logged in as: ${authStatus.username}`;
+    DISCORD_LOGIN_BUTTON.style.display = 'none';
+    DISCORD_LOGOUT_BUTTON.style.display = 'block';
+
+    if (authStatus.isAllowed) {
+      AUTH_STATUS_MESSAGE.textContent += ' (Authorized)';
+      ADVANCED_SEARCH_TAB.style.display = 'block';
+    } else {
+      AUTH_STATUS_MESSAGE.textContent += ' (Not Authorized)';
+      ADVANCED_SEARCH_TAB.style.display = 'none';
+    }
+  } else {
+    AUTH_STATUS_MESSAGE.textContent = 'Not logged in.';
+    DISCORD_LOGIN_BUTTON.style.display = 'block';
+    DISCORD_LOGOUT_BUTTON.style.display = 'none';
+    ADVANCED_SEARCH_TAB.style.display = 'none';
+  }
+}
+
+async function logout() {
+  document.cookie = `${SESSION_COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+  window.location.reload();
+}
+
+// --- Event Handlers ---
+function handleTabClick(e) {
   e.preventDefault();
   const clickedTab = e.target.closest('[data-channel]');
   if (clickedTab) {
@@ -91,9 +167,9 @@ CHANNEL_TABS.addEventListener('click', (e) => {
       }
     }
   }
-});
+}
 
-ADVANCED_SEARCH_FORM.addEventListener('submit', async (e) => {
+async function handleAdvancedSearch(e) {
   e.preventDefault();
   const query = ADVANCED_SEARCH_INPUT.value;
   const channel = ADVANCED_SEARCH_CHANNEL_FILTER.value;
@@ -105,9 +181,13 @@ ADVANCED_SEARCH_FORM.addEventListener('submit', async (e) => {
     if (channel) {
       url += `&channel=${encodeURIComponent(channel)}`;
     }
-
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`Search failed with status ${response.status}`);
+    if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+            throw new Error("You are not authorized to perform this search.");
+        }
+        throw new Error(`Search failed with status ${response.status}`);
+    }
     const results = await response.json();
     renderMessages(ADVANCED_SEARCH_RESULTS, results);
     if (results.length === 0) {
@@ -115,10 +195,9 @@ ADVANCED_SEARCH_FORM.addEventListener('submit', async (e) => {
     }
   } catch (error) {
     console.error('Advanced search failed:', error);
-    ADVANCED_SEARCH_RESULTS.innerHTML = '<p class="text-center text-danger">Search failed. Please try again.</p>';
+    ADVANCED_SEARCH_RESULTS.innerHTML = `<p class="text-center text-danger">${error.message}</p>`;
   }
-});
-
+}
 // --- Generic Message Renderer ---
 function renderMessages(element, messages) {
   element.innerHTML = '';
@@ -178,7 +257,9 @@ async function fetchBackendConfig() {
   }
 }
 
-CONFIG_FORM.addEventListener('submit', (e) => {
+// --- Data Fetching and Rendering ---
+// --- Search, Filter, and Tab Navigation ---
+function handleConfigFormSubmit(e) {
   e.preventDefault();
   const formData = new FormData(CONFIG_FORM);
   const oldUsername = currentUserConfig.username;
@@ -194,13 +275,14 @@ CONFIG_FORM.addEventListener('submit', (e) => {
     fetchMentions();
   }
   restartPolling();
-});
+}
 
 // --- Chat Log Display ---
 async function fetchChatLog() {
   if (activeChannel === 'advanced-search') return; // Don't fetch for advanced search tab
   try {
-    const response = await fetch(`${BACKEND_URL}/api/messages?limit=200&channel=${activeChannel}`);
+    // The limit is now handled by the backend based on auth status
+    const response = await fetch(`${BACKEND_URL}/api/messages?channel=${activeChannel}`);
     const messages = await response.json();
     renderMessages(CHAT_LOG_ELEMENT, messages);
     applyChatFilter();
@@ -289,7 +371,7 @@ function displayMentions() {
     }
 }
 
-MENTIONS_LOG_ELEMENT.addEventListener('click', async (e) => {
+function handleMentionsClick(e) {
   const deleteButton = e.target.closest('[data-action="delete-mention"]');
   if (deleteButton) {
     const mentionId = parseInt(deleteButton.dataset.mentionId, 10);
@@ -312,11 +394,9 @@ MENTIONS_LOG_ELEMENT.addEventListener('click', async (e) => {
         alert('Failed to hide mention.');
       }
   }
-});
+}
 
 // --- Polling ---
-let pollingIntervalId;
-
 function startPolling() {
   stopPolling();
   pollingIntervalId = setInterval(() => {

@@ -291,19 +291,34 @@ def startup_event():
     scheduler.start()
 
 @app.get("/api/messages", response_model=List[MessageModel])
-def get_messages(db: Session = Depends(get_db), limit: int = 200, channel: str = "trade"):
+def get_messages(
+    db: Session = Depends(get_db), 
+    channel: str = "trade",
+    current_user: Optional[DiscordUser] = Depends(get_current_user_optional)
+):
+    # Determine limit based on auth status
+    limit = 200 if current_user and is_user_allowed(current_user, db) else 75
+    
     messages = db.query(Message).filter(Message.channel == channel).order_by(Message.timestamp.desc()).limit(limit).all()
     return messages
 
 @app.get("/api/search", response_model=List[MessageModel])
-def search_messages(q: str, channel: Optional[str] = None, db: Session = Depends(get_db)):
+def search_messages(
+    q: str, 
+    channel: Optional[str] = None, 
+    db: Session = Depends(get_db),
+    current_user: DiscordUser = Depends(get_current_user)
+):
+    # Ensure the user is allowed to use this feature
+    if not is_user_allowed(current_user, db):
+        raise HTTPException(status_code=403, detail="You are not authorized to use the search feature.")
+
     if not q:
         return []
     
     query = db.query(Message)
     
     # Perform a case-insensitive search on the message content.
-    # Using .ilike() for case-insensitivity which is standard in SQLAlchemy.
     query = query.filter(Message.message_html.ilike(f"%{q}%"))
     
     if channel:
@@ -351,24 +366,55 @@ def get_all_configs(db: Session = Depends(get_db)):
 #     # Allow 'channels_to_track' to be configured via the API.
 #     if key not in ["channels_to_track"]:
 
-# --- Authentication Dependency ---
-async def get_current_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
+# --- Authentication / Authorization Helpers ---
+def is_user_allowed(user: DiscordUser, db: Session) -> bool:
+    """Checks if a user is in the allowed users list or in an allowed guild."""
+    if not user:
+        return False
+
+    allowed_users_str = get_config(db, "allowed_users", "")
+    allowed_guilds_str = get_config(db, "allowed_guilds", "")
+    
+    allowed_users = set(u.strip() for u in allowed_users_str.split(',') if u.strip())
+    allowed_guilds = set(g.strip() for g in allowed_guilds_str.split(',') if g.strip())
+
+    # 1. Check if user's ID is in the allowed list
+    if user.id in allowed_users:
+        return True
+
+    # 2. Check if any of the user's guilds are in the allowed list
+    user_guilds = json.loads(user.guilds_data)
+    user_guild_ids = {guild['id'] for guild in user_guilds}
+    if allowed_guilds.intersection(user_guild_ids):
+        return True
+    
+    return False
+
+async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[DiscordUser]:
+    """Dependency to get the current user if a valid session exists, otherwise returns None."""
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        return None
 
     session = db.query(PersistentSession).filter(PersistentSession.session_token == session_token).first()
     if not session or session.expiry_date.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
         if session:
             db.delete(session)
             db.commit()
-        raise HTTPException(status_code=401, detail="Session expired or invalid")
+        return None
 
     user = db.query(DiscordUser).filter(DiscordUser.id == session.discord_id).first()
     if not user:
-        raise HTTPException(status_code=401, detail="User not found for session")
+        return None
     
     return user
+
+async def get_current_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
+    user = await get_current_user_optional(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
 
 # --- API Endpoints ---
 @app.get("/")
@@ -441,30 +487,10 @@ async def discord_callback(request: Request, code: str, db: Session = Depends(ge
 @app.get("/api/me", response_model=AuthStatusModel)
 async def get_me(current_user: DiscordUser = Depends(get_current_user), db: Session = Depends(get_db)):
     """
-    Checks if the currently logged-in user is authorized based on their
-    Discord ID or guild memberships.
+    Checks if the currently logged-in user is authorized and returns their status.
     """
-    # 1. Get allowed lists from DB config
-    allowed_users_str = get_config(db, "allowed_users", "")
-    allowed_guilds_str = get_config(db, "allowed_guilds", "")
-    
-    allowed_users = set(user.strip() for user in allowed_users_str.split(',') if user.strip())
-    allowed_guilds = set(guild.strip() for guild in allowed_guilds_str.split(',') if guild.strip())
-    
-    # 2. Get user's guilds from the stored JSON data
-    user_guilds = json.loads(current_user.guilds_data)
-    user_guild_ids = {guild['id'] for guild in user_guilds}
-    
-    # 3. Perform authorization checks
-    is_allowed = False
-    # Check if user ID is in the allowed list
-    if current_user.id in allowed_users:
-        is_allowed = True
-    # If not, check if they are in an allowed guild
-    elif allowed_guilds.intersection(user_guild_ids):
-        is_allowed = True
-        
+    allowed = is_user_allowed(current_user, db)
     return AuthStatusModel(
         username=f"{current_user.username}#{current_user.discriminator}",
-        is_allowed=is_allowed
+        is_allowed=allowed
     )
