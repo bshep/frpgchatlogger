@@ -265,31 +265,44 @@ def scheduled_log_parsing():
 def archive_old_messages():
     """Scheduled job to move messages older than 2 hours to the archive table."""
     db = SessionLocal()
+    CHUNK_SIZE = 500  # Stay safely below the 999 variable limit for SQLite
+
     try:
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
-        
-        messages_to_archive = db.query(Message).filter(Message.timestamp < cutoff_time).all()
-        
-        if not messages_to_archive:
+        total_archived = 0
+
+        while True:
+            # Find a chunk of messages to archive
+            messages_to_archive = db.query(Message).filter(Message.timestamp < cutoff_time).limit(CHUNK_SIZE).all()
+            
+            if not messages_to_archive:
+                break  # No more messages to archive
+
+            # Prepare data for bulk insert
+            archive_data = [
+                {
+                    "id": msg.id, "timestamp": msg.timestamp, "username": msg.username,
+                    "message_html": msg.message_html, "channel": msg.channel,
+                }
+                for msg in messages_to_archive
+            ]
+
+            if archive_data:
+                db.bulk_insert_mappings(MessageArchive, archive_data)
+                
+                ids_to_delete = [msg.id for msg in messages_to_archive]
+                db.query(Message).filter(Message.id.in_(ids_to_delete)).delete(synchronize_session=False)
+                
+                db.commit()  # Commit each chunk as a transaction
+
+                chunk_size = len(messages_to_archive)
+                total_archived += chunk_size
+                print(f"Archived a chunk of {chunk_size} messages...")
+
+        if total_archived > 0:
+            print(f"Successfully archived a total of {total_archived} messages.")
+        else:
             print("No messages to archive.")
-            return
-
-        archive_data = [
-            {
-                "id": msg.id, "timestamp": msg.timestamp, "username": msg.username,
-                "message_html": msg.message_html, "channel": msg.channel,
-            }
-            for msg in messages_to_archive
-        ]
-
-        if archive_data:
-            db.bulk_insert_mappings(MessageArchive, archive_data)
-            
-            ids_to_delete = [msg.id for msg in messages_to_archive]
-            db.query(Message).filter(Message.id.in_(ids_to_delete)).delete(synchronize_session=False)
-            
-            db.commit()
-            print(f"Successfully archived {len(messages_to_archive)} messages.")
 
     except Exception as e:
         db.rollback()
