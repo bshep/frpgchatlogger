@@ -136,8 +136,14 @@ function updateUIForAuth() {
 }
 
 async function logout() {
-  document.cookie = `${SESSION_COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-  window.location.reload();
+  try {
+    await fetch(`${BACKEND_URL}/api/logout`, { method: 'POST' });
+  } catch (error) {
+    console.error("Logout request failed:", error);
+  } finally {
+    // Always reload to reflect the new (logged-out) state
+    window.location.reload();
+  }
 }
 
 // --- Event Handlers ---

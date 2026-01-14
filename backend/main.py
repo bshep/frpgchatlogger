@@ -12,7 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from bs4 import BeautifulSoup
 from cryptography.fernet import Fernet
 from dateutil.parser import parse
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
@@ -520,3 +520,15 @@ async def get_me(current_user: DiscordUser = Depends(get_current_user), db: Sess
         username=f"{current_user.username}#{current_user.discriminator}",
         is_allowed=allowed
     )
+
+@app.post("/api/logout")
+async def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_token:
+        # Delete the session from the database
+        db.query(PersistentSession).filter(PersistentSession.session_token == session_token).delete()
+        db.commit()
+    
+    # Instruct the browser to delete the cookie
+    response.delete_cookie(key=SESSION_COOKIE_NAME)
+    return {"message": "Logout successful"}
