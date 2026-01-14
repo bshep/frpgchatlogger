@@ -1,10 +1,31 @@
 #!/bin/bash
-# set -euo pipefail
+set -e
 
-echo "Starting development servers..."
+# --- Configuration ---
+SESSION_NAME="frpg-dev"
 
-# --- Backend Server ---
-echo "Starting backend development server..."
+# --- Pre-checks ---
+if ! command -v tmux &> /dev/null; then
+    echo "tmux is not installed. Please install it to use this script."
+    echo "On Debian/Ubuntu: sudo apt-get install tmux"
+    echo "On macOS (with Homebrew): brew install tmux"
+    exit 1
+fi
+
+if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo "A tmux session named '$SESSION_NAME' is already running."
+    read -p "Attach to it? (y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        tmux attach-session -t "$SESSION_NAME"
+    else
+        echo "To kill the existing session, run: tmux kill-session -t $SESSION_NAME"
+    fi
+    exit 0
+fi
+
+# --- Pre-run setup ---
+echo "Ensuring backend virtual environment and dependencies are set up..."
 (
     cd backend
     if [ ! -d "venv" ]; then
@@ -13,45 +34,42 @@ echo "Starting backend development server..."
     fi
     source venv/bin/activate
     pip install -r requirements.txt
-    uvicorn main:app --reload --host 0.0.0.0 --port 8000 &
-    BACKEND_PID=$!
-    echo "Backend server started with PID: $BACKEND_PID"
-) &
+)
 
-# --- Frontend Server ---
-echo "Starting frontend development server..."
+echo "Ensuring frontend dependencies are set up..."
 (
     cd frontend
     npm install
-    npm run dev &
-    FRONTEND_PID=$!
-    echo "Frontend server started with PID: $FRONTEND_PID"
-) &
+)
 
-# Store PIDs of background processes
-PIDS=($BACKEND_PID $FRONTEND_PID)
+# --- Create and configure tmux session ---
+echo "Creating new tmux session: $SESSION_NAME"
 
-# Wait for both processes to start (give them a moment)
-sleep 5
+# Start a new detached session and name the first window
+tmux new-session -d -s "$SESSION_NAME" -n "Backend"
 
-echo "Development servers started. Press Ctrl+C to stop both."
+# Send the backend command to the first pane (window 0, pane 0)
+tmux send-keys -t "$SESSION_NAME:0.0" "echo '--- Starting Backend Server ---'; cd backend && source venv/bin/activate && export ENCRYPTION_KEY="T-XKIzPJkqPyFMWPlokCnq5msDRZHtKkcmuKPj9XdOI=" && uvicorn main:app --reload --host 0.0.0.0 --port 8000" C-m
 
-# Function to kill background processes on exit
-cleanup() {
-    echo "Stopping development servers..."
-    for pid in "${PIDS[@]}"; do
-        if kill "$pid" 2>/dev/null; then
-            echo "Killed process $pid"
-        fi
-    done
-    wait # Wait for all background jobs to finish
-    echo "Development servers stopped."
-}
+# Split the window vertically to create a new pane
+tmux split-window -v
 
-# Trap Ctrl+C (SIGINT) and call cleanup function
-trap cleanup SIGINT SIGTERM
+# Send the frontend command to the new pane (window 0, pane 1)
+tmux send-keys -t "$SESSION_NAME:0.1" "echo '--- Starting Frontend Server ---'; cd frontend && npm run dev" C-m
 
-# Keep the script running until interrupted
-wait "${PIDS[@]}"
+# Set a more balanced layout
+tmux select-layout even-vertical
 
-cleanup
+# Select the top pane to start
+tmux select-pane -t "$SESSION_NAME:0.0"
+
+echo "tmux session '$SESSION_NAME' created with a split-screen layout."
+echo "Attaching to session now... (To detach: Ctrl+B, then D)"
+echo "To kill all servers, run: tmux kill-session -t $SESSION_NAME"
+sleep 1
+
+# Attach to the session
+tmux attach-session -t "$SESSION_NAME"
+
+echo
+echo "tmux session has ended."
