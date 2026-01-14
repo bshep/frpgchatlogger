@@ -213,6 +213,26 @@ function renderMessages(element, messages) {
     messageElement.classList.add('list-group-item', 'list-group-item-action');
     const timestamp = new Date(msg.timestamp+"-06:00").toLocaleString(undefined, { timeZone: 'America/Chicago' });
     const channelInfo = selectedTab === 'advanced-search' ? `<small class="channel">(${msg.channel})</small>` : '';
+
+    // Fix item links to open in new tab and to point to correct URL
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = msg.message_html;
+    tempDiv.querySelectorAll('a').forEach(link => {
+      if (link.href.includes('item.php')) {
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.href = link.href.replace('item.php', 'index.php#!/item.php');
+      }
+
+      if (link.href.includes('profile.php')) {
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.href = link.href.replace('profile.php', 'index.php#!/profile.php');
+      }
+
+    });
+    msg.message_html = tempDiv.innerHTML;
+
     messageElement.innerHTML = `
       <div class="d-flex w-100 justify-content-between">
         <small class="timestamp">${timestamp}</small>

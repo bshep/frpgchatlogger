@@ -25,14 +25,6 @@ a[style*='color:teal']:hover {
     text-decoration: underline;
 }
 
-/* Color codes for usernames (from FarmRPG site - example) */
-.cc1010, .cc1010 a { color: #d2b48c !important; } /* Tan */
-.cc8, .cc8 a { color: #87cefa !important; } /* LightSkyBlue */
-.cc1016, .cc1016 a { color: #ff7f50 !important; } /* Coral */
-.cc1018, .cc1018 a { color: #98fb98 !important; } /* PaleGreen */
-.cc1008, .cc1008 a { color: #f08080 !important; } /* LightCoral */
-.cc44, .cc44 a { color: #ffb6c1 !important; } /* LightPink */
-/* Add more as needed by inspecting the source and choosing a light equivalent */
 
 .itemimgsm {
     vertical-align: middle;
@@ -48,4 +40,397 @@ a[style*='color:teal']:hover {
     padding-top: 0px !important;
     padding-bottom: 0px !important;
     margin-top: 0px !important;
+}
+
+
+/* Imported from FRPG CSS for consistency */
+.cc1001 {
+  background: #66ff00;  /* fallback for old browsers */
+  background: -webkit-linear-gradient(to right, #66ff00, #a80077);  /* Chrome 10-25, Safari 5.1-6 */
+  background: -o-linear-gradient(to right, #66ff00, #a80077);  /* Chrome 10-25, Safari 5.1-6 */
+  background: -moz-linear-gradient(to right, #66ff00, #a80077);  /* Chrome 10-25, Safari 5.1-6 */
+  background: linear-gradient(to right, #66ff00, #a80077); /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 1px 1px 1px #aaa;
+  }
+
+.cc1002 {
+  padding-left:2px;
+  padding-right:2px;
+  font-size:11px;
+  border: 1px solid #ff6600;
+  border-radius: 5px;
+  background: #ff0000;
+  background: -webkit-linear-gradient(90deg, #ff0000 0%, #ff9900 100%);
+  background: -o-linear-gradient(90deg, #ff0000 0%, #ff9900 100%);
+  background: -moz-linear-gradient(90deg, #ff0000 0%, #ff9900 100%);
+  background: linear-gradient(90deg, #ff0000 0%, #ff9900 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1003 {
+  background: #00C9FF;
+  background: -webkit-linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%);
+  background: -o-linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%);
+  background: -moz-linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%);
+  background: linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1004 {
+  background: pink;
+  background: -webkit-linear-gradient(90deg, #efd5ff 0%, #515ada 100%);
+  background: -o-linear-gradient(90deg, #efd5ff 0%, #515ada 100%);
+  background: -moz-linear-gradient(90deg, #efd5ff 0%, #515ada 100%);
+  background: linear-gradient(90deg, #efd5ff 0%, #515ada 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 1px 1px 2px #aaa;
+}
+
+.cc1005 {
+    background: #FC466B;  /* fallback for old browsers */  /* Chrome 10-25, Safari 5.1-6 */
+    background: -webkit-linear-gradient(left, #3F5EFB, #FC466B);
+    background: -moz-linear-gradient(left, #3F5EFB, #FC466B);
+    background: -o-linear-gradient(left, #3F5EFB, #FC466B);
+    background: linear-gradient(to right, #3F5EFB, #FC466B); /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1006 {
+  background: #FC354C;  /* fallback for old browsers */
+background: -webkit-linear-gradient(left, #0ABFBC, #FC354C);
+background: -moz-linear-gradient(left, #0ABFBC, #FC354C);
+background: -o-linear-gradient(left, #0ABFBC, #FC354C);
+background: linear-gradient(to right, #0ABFBC, #FC354C);  /* Chrome 10-25, Safari 5.1-6 */ /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1007 {
+background-color: #FA8BFF;
+background-image: -webkit-linear-gradient(left, #FA8BFF 0%, #2BD2FF 52%, #2BFF88 90%);
+background-image: -moz-linear-gradient(left, #FA8BFF 0%, #2BD2FF 52%, #2BFF88 90%);
+background-image: -o-linear-gradient(left, #FA8BFF 0%, #2BD2FF 52%, #2BFF88 90%);
+background-image: linear-gradient(to right, #FA8BFF 0%, #2BD2FF 52%, #2BFF88 90%);
+background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1008 {
+background-color: #52ACFF;
+background-image: -webkit-linear-gradient(left, #52ACFF 25%, #FFE32C 100%);
+background-image: -moz-linear-gradient(left, #52ACFF 25%, #FFE32C 100%);
+background-image: -o-linear-gradient(left, #52ACFF 25%, #FFE32C 100%);
+background-image: linear-gradient(to right, #52ACFF 25%, #FFE32C 100%);
+background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1009 {
+background-color: rgba(34,126,34,1);
+background-image: -webkit-linear-gradient( 110.1deg,  rgba(34,126,34,1) 2.9%, rgba(168,251,60,1) 90.3% );
+background-image: -moz-linear-gradient( 110.1deg,  rgba(34,126,34,1) 2.9%, rgba(168,251,60,1) 90.3% );
+background-image: -o-linear-gradient( 110.1deg,  rgba(34,126,34,1) 2.9%, rgba(168,251,60,1) 90.3% );
+background-image: linear-gradient( 110.1deg,  rgba(34,126,34,1) 2.9%, rgba(168,251,60,1) 90.3% );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1010 {
+background-color: #00d2ff;
+background-image: -webkit-linear-gradient(left, #00d2ff 0%, #00fff0 52%, #2184f4 90%);
+background-image: -moz-linear-gradient(left, #00d2ff 0%, #00fff0 52%, #2184f4 90%);
+background-image: -o-linear-gradient(left, #00d2ff 0%, #00fff0 52%, #2184f4 90%);
+background-image: linear-gradient(to right, #00d2ff 0%, #00fff0 52%, #2184f4 90%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1011 {
+background: #00F260;  /* fallback for old browsers */
+background: -webkit-linear-gradient(to right, #0575E6, #00F260);  /* Chrome 10-25, Safari 5.1-6 */
+background: linear-gradient(to right, #0575E6, #00F260); /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
+
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.cc1012 {
+background: #12c2e9;  /* fallback for old browsers */
+background: -webkit-linear-gradient(to right, #f64f59, #c471ed, #12c2e9);  /* Chrome 10-25, Safari 5.1-6 */
+background: linear-gradient(to right, #f64f59, #c471ed, #12c2e9); /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
+
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.cc1013 {
+background: #40E0D0;  /* fallback for old browsers */
+background: -webkit-linear-gradient(to right, #FF0080, #FF8C00, #40E0D0);  /* Chrome 10-25, Safari 5.1-6 */
+background: linear-gradient(to right, #FF0080, #FF8C00, #40E0D0); /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+
+.cc1014 {
+  background-color: rgba( 255, 0, 0, .8);
+  background-image: repeating-linear-gradient(80deg, rgba(255,0,0, .8), rgba(240, 240, 240, 0.8), rgba(0,163,27,0.8) 33.3%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.cc1015{
+  background-color: rgba(255, 204, 255, 0.8);
+  background-image: linear-gradient(45deg, rgba(255, 204, 255, 0.8), rgba(255, 0, 102, 0.8) 90%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.cc1016{
+  background-color: rgba(253,255,96,1);
+  background-image: linear-gradient(45deg, rgba(253,255,96,1),  rgba(255,138,51,1));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.cc1017{
+  background-color: rgba(181,0,25,1);
+  background-image: linear-gradient(45deg, rgba(181,0,25,1) 0%, rgba(177,101,0,1) 50%, rgba(0,26,255,1) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.cc1018{
+  background-color: rgba(23, 191, 251, 0.8);
+  background-image: linear-gradient(45deg, rgba(23, 191, 251, 0.8), rgba(254, 149, 212,0.8) 90%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/*Boobun Requested Admin Color*/
+.cc8008{
+  background-color: rgba(255,0,144,1);
+  background-image: linear-gradient(45deg, rgba(255,0,144,1), rgba(29,212,253,1), #fbff00);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes animated_text {
+    50% {background-position: center;}
+}
+
+
+
+.cc1007noshadow {
+background-color: #FA8BFF;
+background-image: -webkit-linear-gradient(left, #FA8BFF 0%, #2BD2FF 52%, #2BFF88 90%);
+background-image: -moz-linear-gradient(left, #FA8BFF 0%, #2BD2FF 52%, #2BFF88 90%);
+background-image: -o-linear-gradient(left, #FA8BFF 0%, #2BD2FF 52%, #2BFF88 90%);
+background-image: linear-gradient(to right, #FA8BFF 0%, #2BD2FF 52%, #2BFF88 90%);
+background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1008noshadow {
+background-color: #52ACFF;
+background-image: -webkit-linear-gradient(left, #52ACFF 25%, #FFE32C 100%);
+background-image: -moz-linear-gradient(left, #52ACFF 25%, #FFE32C 100%);
+background-image: -o-linear-gradient(left, #52ACFF 25%, #FFE32C 100%);
+background-image: linear-gradient(to right, #52ACFF 25%, #FFE32C 100%);
+background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1009noshadow {
+background-color: rgba(34,126,34,1);
+background-image: -webkit-linear-gradient( 110.1deg,  rgba(34,126,34,1) 2.9%, rgba(168,251,60,1) 90.3% );
+background-image: -moz-linear-gradient( 110.1deg,  rgba(34,126,34,1) 2.9%, rgba(168,251,60,1) 90.3% );
+background-image: -o-linear-gradient( 110.1deg,  rgba(34,126,34,1) 2.9%, rgba(168,251,60,1) 90.3% );
+background-image: linear-gradient( 110.1deg,  rgba(34,126,34,1) 2.9%, rgba(168,251,60,1) 90.3% );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cc1010noshadow {
+background-color: #00d2ff;
+background-image: -webkit-linear-gradient(left, #00d2ff 0%, #00fff0 52%, #2184f4 90%);
+background-image: -moz-linear-gradient(left, #00d2ff 0%, #00fff0 52%, #2184f4 90%);
+background-image: -o-linear-gradient(left, #00d2ff 0%, #00fff0 52%, #2184f4 90%);
+background-image: linear-gradient(to right, #00d2ff 0%, #00fff0 52%, #2184f4 90%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 1px 1px 1px rgba(0,0,0,0.4);
+}
+
+.cc1011noshadow {
+background: #00F260;  /* fallback for old browsers */
+background: -webkit-linear-gradient(to right, #0575E6, #00F260);  /* Chrome 10-25, Safari 5.1-6 */
+background: linear-gradient(to right, #0575E6, #00F260); /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
+
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: animated_text 3s infinite;
+    -moz-animation: animated_text 3s infinite;
+    -webkit-animation: animated_text 3s infinite;
+}
+
+.cc1012noshadow {
+background: #12c2e9;  /* fallback for old browsers */
+background: -webkit-linear-gradient(to right, #f64f59, #c471ed, #12c2e9);  /* Chrome 10-25, Safari 5.1-6 */
+background: linear-gradient(to right, #f64f59, #c471ed, #12c2e9); /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
+
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: animated_text 6s infinite;
+    -moz-animation: animated_text 6s infinite;
+    -webkit-animation: animated_text 6s infinite;
+}
+
+.cc1013noshadow {
+background: #40E0D0;  /* fallback for old browsers */
+background: -webkit-linear-gradient(to right, #FF0080, #FF8C00, #40E0D0);  /* Chrome 10-25, Safari 5.1-6 */
+background: linear-gradient(to right, #FF0080, #FF8C00, #40E0D0); /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: animated_text 3s infinite;
+    -moz-animation: animated_text 3s infinite;
+    -webkit-animation: animated_text 3s infinite;
+}
+
+.cc1014noshadow {
+  background-color: rgba( 255, 0, 0, .8);
+  background-image: repeating-linear-gradient(80deg, rgba(255,0,0, .8), rgba(240, 240, 240, 0.8), rgba(0,163,27,0.8) 33.3%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: animated_text 3s infinite;
+    -moz-animation: animated_text 3s infinite;
+    -webkit-animation: animated_text 3s infinite;
+}
+
+
+.cc1015noshadow{
+  background-color: rgba(255, 204, 255, 0.8);
+  background-image: linear-gradient(45deg, rgba(255, 204, 255, 0.8), rgba(255, 0, 102, 0.8) 90%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: animated_text 3s infinite;
+    -moz-animation: animated_text 3s infinite;
+    -webkit-animation: animated_text 3s infinite;
+}
+
+
+.cc1016noshadow {
+  background-color: rgba(253,255,96,1);
+  background-image: linear-gradient(45deg, rgba(253,255,96,1),  rgba(255,138,51,1));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: animated_text 3s infinite;
+    -moz-animation: animated_text 3s infinite;
+    -webkit-animation: animated_text 3s infinite;
+}
+
+.cc1017noshadow{
+  background-color: rgba(181,0,25,1);
+  background-image: linear-gradient(45deg, rgba(181,0,25,1) 0%, rgba(177,101,0,1) 50%, rgba(0,26,255,1) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: animated_text 3s infinite;
+    -moz-animation: animated_text 3s infinite;
+    -webkit-animation: animated_text 3s infinite;
+}
+
+.cc1018noshadow{
+  background-color: rgba(23, 191, 251, 0.8);
+  background-image: linear-gradient(45deg, rgba(23, 191, 251, 0.8), rgba(254, 149, 212,0.8) 90%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: animated_text 3s infinite;
+    -moz-animation: animated_text 3s infinite;
+    -webkit-animation: animated_text 3s infinite;
+}
+
+
+/*Boobun Requested Admin Color*/
+.cc8008noshadow{
+  background-color: rgba(255,0,144,1);
+  background-image: linear-gradient(45deg, rgba(255,0,144,1), rgba(29,212,253,1), #fbff00);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-size: 350%;
+  background-position: left;
+  background-clip: text;
+  -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: animated_text 3s infinite;
+    -moz-animation: animated_text 3s infinite;
+    -webkit-animation: animated_text 3s infinite;
+}
+
+.item-title span a {
+    text-decoration: none;
 }
