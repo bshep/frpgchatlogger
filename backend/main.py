@@ -161,22 +161,74 @@ def set_config(db: Session, key: str, value: str):
 chicago_tz = pytz.timezone('America/Chicago')
 
 # --- Background Tasks ---
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, tuple_
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
+
+# ... (imports) ...
+
 def parse_single_channel_log(db: Session, channel_to_parse: str):
-    """Parses the chat log for a single specified channel."""
+    """Parses the chat log for a single specified channel using a batch approach."""
     BASE_URL = "http://farmrpg.com/"
     URL = f"{BASE_URL}chatlog.php?channel={channel_to_parse}"
     
     try:
         page = requests.get(URL)
         soup = BeautifulSoup(page.content, "html.parser")
-        
         chat_lines = soup.find_all("li", class_="item-content")
-        
+
+        potential_messages = []
         for line in reversed(chat_lines):
             title = line.find("div", class_="item-title")
             if not title:
                 continue
 
+            timestamp_str = title.find("strong").text if title.find("strong") else None
+            user_anchor = title.find("a", href=re.compile(r"profile\.php\?user_name="))
+            username = user_anchor.text if user_anchor else "System"
+
+            if timestamp_str:
+                try:
+                    full_timestamp_str = f"{timestamp_str} {datetime.now().year}"
+                    naive_timestamp = parse(full_timestamp_str)
+                    timestamp = chicago_tz.localize(naive_timestamp, is_dst=None)
+                    
+                    # Prepare data but don't query DB yet
+                    potential_messages.append({
+                        "timestamp": timestamp,
+                        "username": username,
+                        "title_element": title
+                    })
+                except ValueError:
+                    continue
+        
+        if not potential_messages:
+            print(f"No new message formats found for channel '{channel_to_parse}'.")
+            return
+
+        # Create a set of unique identifiers for the potential messages
+        potential_ids = {(msg["timestamp"], msg["username"]) for msg in potential_messages}
+
+        # Perform one query to get all existing messages that match our potential new ones
+        existing_messages = db.query(Message.timestamp, Message.username).filter(
+            Message.channel == channel_to_parse,
+            tuple_(Message.timestamp, Message.username).in_(potential_ids)
+        ).all()
+        existing_ids = set(existing_messages)
+
+        # Process only the messages that are actually new
+        new_messages_to_add = []
+        for msg_data in potential_messages:
+            if (msg_data["timestamp"], msg_data["username"]) not in existing_ids:
+                new_messages_to_add.append(msg_data)
+
+        if not new_messages_to_add:
+            print(f"No new messages to insert for channel '{channel_to_parse}'.")
+            return
+
+        for new_msg_data in new_messages_to_add:
+            title = new_msg_data["title_element"]
+            
+            # Reprocess HTML content since it was modified in the first loop
             for a_tag in title.find_all('a'):
                 if a_tag.has_attr('href'):
                     a_tag['href'] = urljoin(BASE_URL, a_tag['href'])
@@ -184,61 +236,43 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
                 if img_tag.has_attr('src'):
                     img_tag['src'] = urljoin(BASE_URL, img_tag['src'])
 
-            timestamp_str = title.find("strong").text if title.find("strong") else None
-            # Find the user link by looking for the specific profile URL structure
-            user_anchor = title.find("a", href=re.compile(r"profile\.php\?user_name="))
-            username = user_anchor.text if user_anchor else "System"
-            
-            if timestamp_str:
-                try:
-                    full_timestamp_str = f"{timestamp_str} {datetime.now().year}" # Use datetime.now()
-                    # Parse using dateutil, then localize to America/Chicago
-                    naive_timestamp = parse(full_timestamp_str)
-                    timestamp = chicago_tz.localize(naive_timestamp, is_dst=None) # Store as Chicago-aware
-                except ValueError:
-                    continue
+            message_text_for_mention_check = title.get_text()
+            if title.strong: title.strong.decompose()
+            if title.find("br"): title.find("br").decompose()
+            message_content_html = str(title)
 
-                message_text_for_mention_check = title.get_text()
+            new_message = Message(
+                timestamp=new_msg_data["timestamp"],
+                username=new_msg_data["username"],
+                message_html=message_content_html,
+                channel=channel_to_parse
+            )
+            db.add(new_message)
+            # We must flush to get the ID for the mention's foreign key
+            db.flush() 
 
-                if title.strong:
-                    title.strong.decompose()
-                if title.find("br"):
-                    title.find("br").decompose()
-                
-                message_content_html = str(title)
-
-                existing_message = db.query(Message).filter_by(timestamp=timestamp, username=username, channel=channel_to_parse).first()
-                if not existing_message:
-                    new_message = Message(
-                        timestamp=timestamp,
-                        username=username,
+            mentioned_users = re.findall(r'@(\w+)', message_text_for_mention_check)
+            for mentioned_user in mentioned_users:
+                # This part is still N+1, but will only run for truly new messages with mentions.
+                # A more complex solution could batch this as well, but this is a major improvement.
+                existing_mention = db.query(Mention).filter_by(message_id=new_message.id, mentioned_user=mentioned_user).first()
+                if not existing_mention:
+                    db.add(Mention(
+                        message_id=new_message.id,
+                        mentioned_user=mentioned_user,
                         message_html=message_content_html,
+                        timestamp=new_msg_data["timestamp"],
+                        read=False,
+                        is_hidden=False,
                         channel=channel_to_parse
-                    )
-                    db.add(new_message)
-                    db.flush()
-
-                    # Find all mentioned users in the message text
-                    mentioned_users = re.findall(r'@(\w+)', message_text_for_mention_check)
-                    for mentioned_user in mentioned_users:
-                        existing_mention = db.query(Mention).filter_by(message_id=new_message.id, mentioned_user=mentioned_user).first()
-                        if not existing_mention:
-                            new_mention = Mention(
-                                message_id=new_message.id,
-                                mentioned_user=mentioned_user,
-                                message_html=message_content_html,
-                                timestamp=timestamp,
-                                read=False,
-                                is_hidden=False,
-                                channel=channel_to_parse # Pass the channel here
-                            )
-                            db.add(new_mention)
+                    ))
         
         db.commit()
-        print(f"Chat log for channel '{channel_to_parse}' parsed successfully at {datetime.now()}")
+        print(f"Processed {len(new_messages_to_add)} new messages for channel '{channel_to_parse}' successfully at {datetime.now()}")
     except Exception as e:
         db.rollback()
         print(f"Error parsing chat log for channel '{channel_to_parse}': {e}")
+
 
 def scheduled_log_parsing():
     """Scheduled task to parse logs for all configured channels."""
