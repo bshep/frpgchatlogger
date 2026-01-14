@@ -290,6 +290,56 @@ def startup_event():
     scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1))
     scheduler.start()
 
+# --- Authentication / Authorization Helpers ---
+def is_user_allowed(user: DiscordUser, db: Session) -> bool:
+    """Checks if a user is in the allowed users list or in an allowed guild."""
+    if not user:
+        return False
+
+    allowed_users_str = get_config(db, "allowed_users", "")
+    allowed_guilds_str = get_config(db, "allowed_guilds", "")
+    
+    allowed_users = set(u.strip() for u in allowed_users_str.split(',') if u.strip())
+    allowed_guilds = set(g.strip() for g in allowed_guilds_str.split(',') if g.strip())
+
+    # 1. Check if user's ID is in the allowed list
+    if user.id in allowed_users:
+        return True
+
+    # 2. Check if any of the user's guilds are in the allowed list
+    user_guilds = json.loads(user.guilds_data)
+    user_guild_ids = {guild['id'] for guild in user_guilds}
+    if allowed_guilds.intersection(user_guild_ids):
+        return True
+    
+    return False
+
+async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[DiscordUser]:
+    """Dependency to get the current user if a valid session exists, otherwise returns None."""
+    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_token:
+        return None
+
+    session = db.query(PersistentSession).filter(PersistentSession.session_token == session_token).first()
+    if not session or session.expiry_date.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
+        if session:
+            db.delete(session)
+            db.commit()
+        return None
+
+    user = db.query(DiscordUser).filter(DiscordUser.id == session.discord_id).first()
+    if not user:
+        return None
+    
+    return user
+
+async def get_current_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
+    user = await get_current_user_optional(request, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+# --- API Endpoints ---
+
 @app.get("/api/messages", response_model=List[MessageModel])
 def get_messages(
     db: Session = Depends(get_db), 
@@ -390,30 +440,6 @@ def is_user_allowed(user: DiscordUser, db: Session) -> bool:
     
     return False
 
-async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[DiscordUser]:
-    """Dependency to get the current user if a valid session exists, otherwise returns None."""
-    session_token = request.cookies.get(SESSION_COOKIE_NAME)
-    if not session_token:
-        return None
-
-    session = db.query(PersistentSession).filter(PersistentSession.session_token == session_token).first()
-    if not session or session.expiry_date.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
-        if session:
-            db.delete(session)
-            db.commit()
-        return None
-
-    user = db.query(DiscordUser).filter(DiscordUser.id == session.discord_id).first()
-    if not user:
-        return None
-    
-    return user
-
-async def get_current_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
-    user = await get_current_user_optional(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return user
 
 
 # --- API Endpoints ---
