@@ -45,3 +45,4 @@ Temporary Items
 .apdisk
 backend/chatlog.db
 frpgchatlogger-key-pair.pem
+chatlog_backup_*.db.gz
