@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text 
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, union_all 
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 # --- Environment and Encryption Setup ---
@@ -45,6 +45,15 @@ class Message(Base):
     username = Column(String, index=True)
     message_html = Column(String)
     channel = Column(String, default="trade", index=True)
+
+class MessageArchive(Base):
+    __tablename__ = "messages_archive"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, index=True)
+    username = Column(String, index=True)
+    message_html = Column(String)
+    channel = Column(String, index=True)
+
 
 class Config(Base):
     __tablename__ = "config"
@@ -253,6 +262,41 @@ def scheduled_log_parsing():
     finally:
         db.close()
 
+def archive_old_messages():
+    """Scheduled job to move messages older than 2 hours to the archive table."""
+    db = SessionLocal()
+    try:
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
+        
+        messages_to_archive = db.query(Message).filter(Message.timestamp < cutoff_time).all()
+        
+        if not messages_to_archive:
+            print("No messages to archive.")
+            return
+
+        archive_data = [
+            {
+                "id": msg.id, "timestamp": msg.timestamp, "username": msg.username,
+                "message_html": msg.message_html, "channel": msg.channel,
+            }
+            for msg in messages_to_archive
+        ]
+
+        if archive_data:
+            db.bulk_insert_mappings(MessageArchive, archive_data)
+            
+            ids_to_delete = [msg.id for msg in messages_to_archive]
+            db.query(Message).filter(Message.id.in_(ids_to_delete)).delete(synchronize_session=False)
+            
+            db.commit()
+            print(f"Successfully archived {len(messages_to_archive)} messages.")
+
+    except Exception as e:
+        db.rollback()
+        print(f"Error during message archiving: {e}")
+    finally:
+        db.close()
+
 def cleanup_expired_persistent_sessions():
     """Scheduled job to delete expired persistent user sessions from the database."""
     db = SessionLocal()
@@ -332,9 +376,12 @@ def startup_event():
         set_config(db, "allowed_guilds", "")
     db.close()
 
+    archive_old_messages() # Run once at startup to archive old messages
+    
     scheduler = BackgroundScheduler()
     # Schedule to run every 3 seconds
     scheduler.add_job(scheduled_log_parsing, 'interval', seconds=5)
+    scheduler.add_job(archive_old_messages, 'interval', hours=1)
     scheduler.add_job(cleanup_expired_persistent_sessions, 'interval', hours=1)
     # Schedule to run once immediately
     scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1))
@@ -415,17 +462,32 @@ def search_messages(
 
     if not q:
         return []
+
+    # Define the filter condition
+    q_filter = Message.message_html.ilike(f"%{q}%")
     
-    query = db.query(Message)
-    
-    # Perform a case-insensitive search on the message content.
-    query = query.filter(Message.message_html.ilike(f"%{q}%"))
-    
+    # Query for recent messages
+    recent_query = db.query(Message).filter(q_filter)
     if channel:
-        query = query.filter(Message.channel == channel)
-        
-    # Return results ordered by most recent first, with a safety limit.
-    results = query.order_by(Message.timestamp.desc()).limit(500).all()
+        recent_query = recent_query.filter(Message.channel == channel)
+
+    # Query for archived messages
+    archive_query = db.query(MessageArchive).filter(MessageArchive.message_html.ilike(f"%{q}%"))
+    if channel:
+        archive_query = archive_query.filter(MessageArchive.channel == channel)
+    
+    # Combine them
+    # Note: Using python union is simpler here than SQL union for combining two lists of model objects
+    combined_results = recent_query.all() + archive_query.all()
+    
+    # Sort the combined list in Python
+    # This is less efficient than a DB order_by on a UNION, but simpler to implement
+    # and acceptable for a moderate number of results (limited to 500 total).
+    combined_results.sort(key=lambda x: x.timestamp, reverse=True)
+    
+    # Limit the final result set
+    results = combined_results[:500]
+    
     return results
 
 @app.get("/api/mentions", response_model=List[MentionModel])
