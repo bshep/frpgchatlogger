@@ -171,41 +171,63 @@ chicago_tz = pytz.timezone('America/Chicago')
 
 # --- Background Tasks ---
 def parse_single_channel_log(db: Session, channel_to_parse: str):
-    """Parses the chat log for a single specified channel."""
+    """
+    Parses the chat log for a single specified channel.
+    It stops parsing after finding a certain number of consecutive messages
+    that are already in the database.
+    """
+    CONSECUTIVE_FOUND_THRESHOLD = 5
     BASE_URL = "http://farmrpg.com/"
     URL = f"{BASE_URL}chatlog.php?channel={channel_to_parse}"
     
     try:
         page = requests.get(URL)
         soup = BeautifulSoup(page.content, "html.parser")
-        
         chat_lines = soup.find_all("li", class_="item-content")
-        
-        for line in reversed(chat_lines):
+
+        consecutive_found_count = 0
+        new_messages_count = 0
+
+        # The chat log is newest-to-oldest, so we iterate in that order.
+        for line in chat_lines:
             title = line.find("div", class_="item-title")
             if not title:
                 continue
 
-            for a_tag in title.find_all('a'):
-                if a_tag.has_attr('href'):
-                    a_tag['href'] = urljoin(BASE_URL, a_tag['href'])
-            for img_tag in title.find_all('img'):
-                if img_tag.has_attr('src'):
-                    img_tag['src'] = urljoin(BASE_URL, img_tag['src'])
-
             timestamp_str = title.find("strong").text if title.find("strong") else None
-            # Find the user link by looking for the specific profile URL structure
             user_anchor = title.find("a", href=re.compile(r"profile\.php\?user_name="))
             username = user_anchor.text if user_anchor else "System"
             
-            if timestamp_str:
-                try:
-                    full_timestamp_str = f"{timestamp_str} {datetime.now().year}" # Use datetime.now()
-                    # Parse using dateutil, then localize to America/Chicago
-                    naive_timestamp = parse(full_timestamp_str)
-                    timestamp = chicago_tz.localize(naive_timestamp, is_dst=None) # Store as Chicago-aware
-                except ValueError:
-                    continue
+            if not timestamp_str:
+                continue
+            
+            try:
+                full_timestamp_str = f"{timestamp_str} {datetime.now().year}"
+                naive_timestamp = parse(full_timestamp_str)
+                timestamp = chicago_tz.localize(naive_timestamp, is_dst=None)
+            except ValueError:
+                continue
+
+            # Check for existence using the composite key
+            existing_message = db.query(Message).filter_by(timestamp=timestamp, username=username, channel=channel_to_parse).first()
+
+            if existing_message:
+                consecutive_found_count += 1
+                if consecutive_found_count >= CONSECUTIVE_FOUND_THRESHOLD:
+                    print(f"Caught up with logs for channel '{channel_to_parse}'. Found {CONSECUTIVE_FOUND_THRESHOLD} consecutive existing messages.")
+                    break
+            else:
+                # Reset counter and add the new message
+                consecutive_found_count = 0
+                new_messages_count += 1
+                
+                # --- Process and add the new message ---
+                for a_tag in title.find_all('a'):
+                    if a_tag.has_attr('href'):
+                        a_tag['href'] = urljoin(BASE_URL, a_tag['href'])
+                for img_tag in title.find_all('img'):
+                    if img_tag.has_attr('src'):
+                        img_tag['src'] = urljoin(BASE_URL, img_tag['src'])
 
                 message_text_for_mention_check = title.get_text()
 
@@ -216,38 +238,38 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
                 
                 message_content_html = str(title)
 
-                existing_message = db.query(Message).filter_by(timestamp=timestamp, username=username, channel=channel_to_parse).first()
-                if not existing_message:
-                    new_message = Message(
-                        timestamp=timestamp,
-                        username=username,
-                        message_html=message_content_html,
-                        channel=channel_to_parse
-                    )
-                    db.add(new_message)
-                    db.flush()
+                new_message = Message(
+                    timestamp=timestamp,
+                    username=username,
+                    message_html=message_content_html,
+                    channel=channel_to_parse
+                )
+                db.add(new_message)
+                db.flush()  # We need the ID for mentions
 
-                    # Find all mentioned users in the message text
-                    mentioned_users = re.findall(r'@(\w+)', message_text_for_mention_check)
-                    for mentioned_user in mentioned_users:
-                        existing_mention = db.query(Mention).filter_by(message_id=new_message.id, mentioned_user=mentioned_user).first()
-                        if not existing_mention:
-                            new_mention = Mention(
-                                message_id=new_message.id,
-                                mentioned_user=mentioned_user,
-                                message_html=message_content_html,
-                                timestamp=timestamp,
-                                read=False,
-                                is_hidden=False,
-                                channel=channel_to_parse # Pass the channel here
-                            )
-                            db.add(new_mention)
+                # Find and add mentions
+                mentioned_users = re.findall(r'@(\w+)', message_text_for_mention_check)
+                for mentioned_user in mentioned_users:
+                    db.add(Mention(
+                        message_id=new_message.id,
+                        mentioned_user=mentioned_user,
+                        message_html=message_content_html,
+                        timestamp=timestamp,
+                        read=False, is_hidden=False, channel=channel_to_parse
+                    ))
         
-        db.commit()
-        print(f"Chat log for channel '{channel_to_parse}' parsed successfully at {datetime.now()}")
+        if new_messages_count > 0:
+            db.commit()
+            print(f"Added {new_messages_count} new messages for channel '{channel_to_parse}'.")
+        else:
+            # No new messages, so no commit needed.
+            print(f"No new messages found for channel '{channel_to_parse}'.")
+
     except Exception as e:
         db.rollback()
         print(f"Error parsing chat log for channel '{channel_to_parse}': {e}")
+        import traceback
+        traceback.print_exc()
 
 def scheduled_log_parsing():
     """Scheduled task to parse logs for all configured channels."""
