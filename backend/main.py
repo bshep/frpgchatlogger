@@ -212,11 +212,12 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
                 full_timestamp_str = f"{timestamp_str} {datetime.now().year}"
                 naive_timestamp = parse(full_timestamp_str)
                 timestamp = chicago_tz.localize(naive_timestamp, is_dst=None)
+                print(f"{naive_timestamp}, {timestamp}")
             except ValueError:
                 continue
 
             # Check for existence using the composite key
-            existing_message = db.query(Message).filter_by(timestamp=timestamp, username=username, channel=channel_to_parse).first()
+            existing_message = db.query(Message).filter_by(timestamp=naive_timestamp, username=username, channel=channel_to_parse).first()
 
             if existing_message:
                 consecutive_found_count += 1
