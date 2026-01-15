@@ -415,9 +415,9 @@ def startup_event():
     
     scheduler = BackgroundScheduler()
     # Schedule to run every 3 seconds
-    scheduler.add_job(scheduled_log_parsing, 'interval', seconds=5)
-    scheduler.add_job(archive_old_messages, 'interval', hours=1)
-    scheduler.add_job(cleanup_expired_persistent_sessions, 'interval', hours=1)
+    scheduler.add_job(scheduled_log_parsing, 'interval', seconds=5, max_instances=1)
+    scheduler.add_job(archive_old_messages, 'interval', hours=1, max_instances=1)
+    scheduler.add_job(cleanup_expired_persistent_sessions, 'interval', hours=1, max_instances=1)
     # Schedule to run once immediately
     scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1))
     scheduler.start()
