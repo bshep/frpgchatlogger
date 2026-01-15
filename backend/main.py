@@ -101,7 +101,8 @@ class MessageModel(BaseModel):
     username: str
     message_html: str
     channel: str
-    class Config: from_attributes = True
+    class Config:
+        from_attributes = True
 
 class MentionModel(BaseModel):
     id: int
@@ -112,7 +113,8 @@ class MentionModel(BaseModel):
     read: bool
     is_hidden: bool
     channel: str
-    class Config: from_attributes = True
+    class Config:
+        from_attributes = True
 
 class ConfigModel(BaseModel):
     key: str
@@ -184,9 +186,9 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
     CONSECUTIVE_FOUND_THRESHOLD = 5
     BASE_URL = "http://farmrpg.com/"
     URL = f"{BASE_URL}chatlog.php?channel={channel_to_parse}"
-    
+
     try:
-        page = requests.get(URL)
+        page = requests.get(URL, timeout=60)
         soup = BeautifulSoup(page.content, "html.parser")
         chat_lines = soup.find_all("li", class_="item-content")
 
@@ -202,10 +204,10 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
             timestamp_str = title.find("strong").text if title.find("strong") else None
             user_anchor = title.find("a", href=re.compile(r"profile\.php\?user_name="))
             username = user_anchor.text if user_anchor else "System"
-            
+
             if not timestamp_str:
                 continue
-            
+
             try:
                 full_timestamp_str = f"{timestamp_str} {datetime.now().year}"
                 naive_timestamp = parse(full_timestamp_str)
@@ -225,7 +227,7 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
                 # Reset counter and add the new message
                 consecutive_found_count = 0
                 new_messages_count += 1
-                
+
                 # --- Process and add the new message ---
                 for a_tag in title.find_all('a'):
                     if a_tag.has_attr('href'):
@@ -240,7 +242,7 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
                     title.strong.decompose()
                 if title.find("br"):
                     title.find("br").decompose()
-                
+
                 message_content_html = str(title)
 
                 new_message = Message(
@@ -262,7 +264,7 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
                         timestamp=timestamp,
                         read=False, is_hidden=False, channel=channel_to_parse
                     ))
-        
+
         if new_messages_count > 0:
             db.commit()
             print(f"Added {new_messages_count} new messages for channel '{channel_to_parse}'.")
@@ -303,7 +305,7 @@ def archive_old_messages():
             while True:
                 # Find a chunk of messages to archive
                 messages_to_archive = db.query(Message).filter(Message.timestamp < cutoff_time).limit(CHUNK_SIZE).all()
-                
+
                 if not messages_to_archive:
                     break  # No more messages to archive
 
@@ -318,10 +320,10 @@ def archive_old_messages():
 
                 if archive_data:
                     db.bulk_insert_mappings(MessageArchive, archive_data)
-                    
+
                     ids_to_delete = [msg.id for msg in messages_to_archive]
                     db.query(Message).filter(Message.id.in_(ids_to_delete)).delete(synchronize_session=False)
-                    
+
                     db.commit()  # Commit each chunk as a transaction
 
                     chunk_size = len(messages_to_archive)
@@ -367,7 +369,7 @@ def deduplicate_table(db_session, model):
     """
     table_name = model.__tablename__
     print(f"Checking for duplicates in '{table_name}' table...")
-    
+
     # 1. Find groups of rows that are duplicates
     duplicate_groups = db_session.query(
         model.timestamp,
@@ -398,10 +400,10 @@ def deduplicate_table(db_session, model):
 
         # The first one in the list is the one we keep; the rest are to be deleted
         rows_to_delete = all_duplicate_rows[1:]
-        
+
         for row in rows_to_delete:
             db_session.delete(row)
-        
+
         num_deleted_for_group = len(rows_to_delete)
         total_deleted += num_deleted_for_group
         print(f"  - Deleting {num_deleted_for_group} extra entries for user '{group.username}' at {group.timestamp} in channel '{group.channel}'.")
@@ -422,25 +424,25 @@ def deduplicate_messages():
 
 
 
-def run_migrations(engine):
+def run_migrations(l_engine):
     """
     Checks for and creates missing indexes on existing tables.
     This serves as a simple migration helper.
     """
     with db_write_lock:
         print("Running database migrations for indexes...")
-        inspector = inspect(engine)
-        
+        inspector = inspect(l_engine)
+
         # --- Indexes for 'messages' table ---
         try:
             message_indexes = [index['name'] for index in inspector.get_indexes('messages')]
             if 'ix_messages_timestamp' not in message_indexes:
-                with engine.connect() as connection:
+                with l_engine.connect() as connection:
                     with connection.begin():
                         connection.execute(text('CREATE INDEX ix_messages_timestamp ON messages (timestamp)'))
                 print("Created index: ix_messages_timestamp")
             if 'ix_messages_channel' not in message_indexes:
-                with engine.connect() as connection:
+                with l_engine.connect() as connection:
                     with connection.begin():
                         connection.execute(text('CREATE INDEX ix_messages_channel ON messages (channel)'))
                 print("Created index: ix_messages_channel")
@@ -451,7 +453,7 @@ def run_migrations(engine):
         try:
             mention_indexes = [index['name'] for index in inspector.get_indexes('mentions')]
             if 'ix_mentions_timestamp' not in mention_indexes:
-                with engine.connect() as connection:
+                with l_engine.connect() as connection:
                     with connection.begin():
                         connection.execute(text('CREATE INDEX ix_mentions_timestamp ON mentions (timestamp)'))
                 print("Created index: ix_mentions_timestamp")
@@ -462,13 +464,13 @@ def run_migrations(engine):
         try:
             session_indexes = [index['name'] for index in inspector.get_indexes('persistent_sessions')]
             if 'ix_persistent_sessions_expiry_date' not in session_indexes:
-                with engine.connect() as connection:
+                with l_engine.connect() as connection:
                     with connection.begin():
                         connection.execute(text('CREATE INDEX ix_persistent_sessions_expiry_date ON persistent_sessions (expiry_date)'))
                 print("Created index: ix_persistent_sessions_expiry_date")
         except Exception as e:
             print(f"Could not create indexes for 'persistent_sessions' table (may not exist yet): {e}")
-        
+
         print("Index migration check complete.")
 
 @app.on_event("startup")
@@ -642,29 +644,6 @@ def get_all_configs(db: Session = Depends(get_db)):
 #     # Allow 'channels_to_track' to be configured via the API.
 #     if key not in ["channels_to_track"]:
 
-# --- Authentication / Authorization Helpers ---
-def is_user_allowed(user: DiscordUser, db: Session) -> bool:
-    """Checks if a user is in the allowed users list or in an allowed guild."""
-    if not user:
-        return False
-
-    allowed_users_str = get_config(db, "allowed_users", "")
-    allowed_guilds_str = get_config(db, "allowed_guilds", "")
-    
-    allowed_users = set(u.strip() for u in allowed_users_str.split(',') if u.strip())
-    allowed_guilds = set(g.strip() for g in allowed_guilds_str.split(',') if g.strip())
-
-    # 1. Check if user's ID is in the allowed list
-    if user.id in allowed_users:
-        return True
-
-    # 2. Check if any of the user's guilds are in the allowed list
-    user_guilds = json.loads(user.guilds_data)
-    user_guild_ids = {guild['id'] for guild in user_guilds}
-    if allowed_guilds.intersection(user_guild_ids):
-        return True
-    
-    return False
 
 
 
