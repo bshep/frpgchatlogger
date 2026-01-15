@@ -17,7 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, union_all
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, union_all, func
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 # --- Threading Lock for Database Writes ---
@@ -360,6 +360,68 @@ def cleanup_expired_persistent_sessions():
             if db:
                 db.close()
 
+def deduplicate_table(db_session, model):
+    """
+    Finds and deletes duplicate entries in a given table based on
+    (timestamp, username, channel) composite key.
+    """
+    table_name = model.__tablename__
+    print(f"Checking for duplicates in '{table_name}' table...")
+    
+    # 1. Find groups of rows that are duplicates
+    duplicate_groups = db_session.query(
+        model.timestamp,
+        model.username,
+        model.channel,
+        func.count(model.id).label('count')
+    ).group_by(
+        model.timestamp,
+        model.username,
+        model.channel
+    ).having(func.count(model.id) > 1).all()
+
+    total_deleted = 0
+    if not duplicate_groups:
+        print(f"No duplicates found in '{table_name}'.")
+        return
+
+    print(f"Found {len(duplicate_groups)} groups of duplicate messages in '{table_name}'. Processing...")
+
+    # 2. For each group, find all IDs, then delete all but the one with the minimum ID
+    for group in duplicate_groups:
+        # Get all rows for the current duplicate group, ordered by ID
+        all_duplicate_rows = db_session.query(model).filter(
+            model.timestamp == group.timestamp,
+            model.username == group.username,
+            model.channel == group.channel
+        ).order_by(model.id).all()
+
+        # The first one in the list is the one we keep; the rest are to be deleted
+        rows_to_delete = all_duplicate_rows[1:]
+        
+        for row in rows_to_delete:
+            db_session.delete(row)
+        
+        num_deleted_for_group = len(rows_to_delete)
+        total_deleted += num_deleted_for_group
+        print(f"  - Deleting {num_deleted_for_group} extra entries for user '{group.username}' at {group.timestamp} in channel '{group.channel}'.")
+
+    # 3. Commit the transaction
+    db_session.commit()
+    print(f"\nTotal duplicate entries deleted from '{table_name}': {total_deleted}")
+
+def deduplicate_messages():
+    """Scheduled task to deduplicate messages in the database."""
+    with db_write_lock:
+        db = SessionLocal()
+        try:
+            deduplicate_table(db, Message)
+            deduplicate_table(db, MessageArchive)
+        finally:
+            db.close()
+
+
+
 def run_migrations(engine):
     """
     Checks for and creates missing indexes on existing tables.
@@ -426,12 +488,14 @@ def startup_event():
     db.close()
 
     archive_old_messages() # Run once at startup to archive old messages
+    deduplicate_messages() # Run once at startup to deduplicate messages
     
     scheduler = BackgroundScheduler()
     # Schedule to run every 3 seconds
     scheduler.add_job(scheduled_log_parsing, 'interval', seconds=5, max_instances=1)
     scheduler.add_job(archive_old_messages, 'interval', hours=1, max_instances=1)
     scheduler.add_job(cleanup_expired_persistent_sessions, 'interval', hours=1, max_instances=1)
+    scheduler.add_job(deduplicate_messages, 'interval', seconds=60, max_instances=1)
     # Schedule to run once immediately
     scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1))
     scheduler.start()
