@@ -2,6 +2,7 @@ import os
 import json
 import re
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from urllib.parse import urljoin
@@ -16,8 +17,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, union_all 
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, union_all
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
+
+# --- Threading Lock for Database Writes ---
+db_write_lock = threading.Lock()
 
 # --- Environment and Encryption Setup ---
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
@@ -159,12 +163,13 @@ def get_config(db: Session, key: str, default: Optional[str] = None) -> Optional
     return config_item.value if config_item else default
 
 def set_config(db: Session, key: str, value: str):
-    config_item = db.query(Config).filter(Config.key == key).first()
-    if config_item:
-        config_item.value = value
-    else:
-        db.add(Config(key=key, value=value))
-    db.commit()
+    with db_write_lock:
+        config_item = db.query(Config).filter(Config.key == key).first()
+        if config_item:
+            config_item.value = value
+        else:
+            db.add(Config(key=key, value=value))
+        db.commit()
 
 # Define Chicago timezone
 chicago_tz = pytz.timezone('America/Chicago')
@@ -176,100 +181,101 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
     It stops parsing after finding a certain number of consecutive messages
     that are already in the database.
     """
-    CONSECUTIVE_FOUND_THRESHOLD = 5
-    BASE_URL = "http://farmrpg.com/"
-    URL = f"{BASE_URL}chatlog.php?channel={channel_to_parse}"
-    
-    try:
-        page = requests.get(URL)
-        soup = BeautifulSoup(page.content, "html.parser")
-        chat_lines = soup.find_all("li", class_="item-content")
-
-        consecutive_found_count = 0
-        new_messages_count = 0
-
-        # The chat log is newest-to-oldest, so we iterate in that order.
-        for line in chat_lines:
-            title = line.find("div", class_="item-title")
-            if not title:
-                continue
-
-            timestamp_str = title.find("strong").text if title.find("strong") else None
-            user_anchor = title.find("a", href=re.compile(r"profile\.php\?user_name="))
-            username = user_anchor.text if user_anchor else "System"
-            
-            if not timestamp_str:
-                continue
-            
-            try:
-                full_timestamp_str = f"{timestamp_str} {datetime.now().year}"
-                naive_timestamp = parse(full_timestamp_str)
-                timestamp = chicago_tz.localize(naive_timestamp, is_dst=None)
-            except ValueError:
-                continue
-
-            # Check for existence using the composite key
-            existing_message = db.query(Message).filter_by(timestamp=timestamp, username=username, channel=channel_to_parse).first()
-
-            if existing_message:
-                consecutive_found_count += 1
-                if consecutive_found_count >= CONSECUTIVE_FOUND_THRESHOLD:
-                    print(f"Caught up with logs for channel '{channel_to_parse}'. Found {CONSECUTIVE_FOUND_THRESHOLD} consecutive existing messages.")
-                    break
-            else:
-                # Reset counter and add the new message
-                consecutive_found_count = 0
-                new_messages_count += 1
-                
-                # --- Process and add the new message ---
-                for a_tag in title.find_all('a'):
-                    if a_tag.has_attr('href'):
-                        a_tag['href'] = urljoin(BASE_URL, a_tag['href'])
-                for img_tag in title.find_all('img'):
-                    if img_tag.has_attr('src'):
-                        img_tag['src'] = urljoin(BASE_URL, img_tag['src'])
-
-                message_text_for_mention_check = title.get_text()
-
-                if title.strong:
-                    title.strong.decompose()
-                if title.find("br"):
-                    title.find("br").decompose()
-                
-                message_content_html = str(title)
-
-                new_message = Message(
-                    timestamp=timestamp,
-                    username=username,
-                    message_html=message_content_html,
-                    channel=channel_to_parse
-                )
-                db.add(new_message)
-                db.flush()  # We need the ID for mentions
-
-                # Find and add mentions
-                mentioned_users = re.findall(r'@(\w+)', message_text_for_mention_check)
-                for mentioned_user in mentioned_users:
-                    db.add(Mention(
-                        message_id=new_message.id,
-                        mentioned_user=mentioned_user,
-                        message_html=message_content_html,
-                        timestamp=timestamp,
-                        read=False, is_hidden=False, channel=channel_to_parse
-                    ))
+    with db_write_lock:
+        CONSECUTIVE_FOUND_THRESHOLD = 5
+        BASE_URL = "http://farmrpg.com/"
+        URL = f"{BASE_URL}chatlog.php?channel={channel_to_parse}"
         
-        if new_messages_count > 0:
-            db.commit()
-            print(f"Added {new_messages_count} new messages for channel '{channel_to_parse}'.")
-        else:
-            # No new messages, so no commit needed.
-            print(f"No new messages found for channel '{channel_to_parse}'.")
+        try:
+            page = requests.get(URL)
+            soup = BeautifulSoup(page.content, "html.parser")
+            chat_lines = soup.find_all("li", class_="item-content")
 
-    except Exception as e:
-        db.rollback()
-        print(f"Error parsing chat log for channel '{channel_to_parse}': {e}")
-        import traceback
-        traceback.print_exc()
+            consecutive_found_count = 0
+            new_messages_count = 0
+
+            # The chat log is newest-to-oldest, so we iterate in that order.
+            for line in chat_lines:
+                title = line.find("div", class_="item-title")
+                if not title:
+                    continue
+
+                timestamp_str = title.find("strong").text if title.find("strong") else None
+                user_anchor = title.find("a", href=re.compile(r"profile\.php\?user_name="))
+                username = user_anchor.text if user_anchor else "System"
+                
+                if not timestamp_str:
+                    continue
+                
+                try:
+                    full_timestamp_str = f"{timestamp_str} {datetime.now().year}"
+                    naive_timestamp = parse(full_timestamp_str)
+                    timestamp = chicago_tz.localize(naive_timestamp, is_dst=None)
+                except ValueError:
+                    continue
+
+                # Check for existence using the composite key
+                existing_message = db.query(Message).filter_by(timestamp=timestamp, username=username, channel=channel_to_parse).first()
+
+                if existing_message:
+                    consecutive_found_count += 1
+                    if consecutive_found_count >= CONSECUTIVE_FOUND_THRESHOLD:
+                        print(f"Caught up with logs for channel '{channel_to_parse}'. Found {CONSECUTIVE_FOUND_THRESHOLD} consecutive existing messages.")
+                        break
+                else:
+                    # Reset counter and add the new message
+                    consecutive_found_count = 0
+                    new_messages_count += 1
+                    
+                    # --- Process and add the new message ---
+                    for a_tag in title.find_all('a'):
+                        if a_tag.has_attr('href'):
+                            a_tag['href'] = urljoin(BASE_URL, a_tag['href'])
+                    for img_tag in title.find_all('img'):
+                        if img_tag.has_attr('src'):
+                            img_tag['src'] = urljoin(BASE_URL, img_tag['src'])
+
+                    message_text_for_mention_check = title.get_text()
+
+                    if title.strong:
+                        title.strong.decompose()
+                    if title.find("br"):
+                        title.find("br").decompose()
+                    
+                    message_content_html = str(title)
+
+                    new_message = Message(
+                        timestamp=timestamp,
+                        username=username,
+                        message_html=message_content_html,
+                        channel=channel_to_parse
+                    )
+                    db.add(new_message)
+                    db.flush()  # We need the ID for mentions
+
+                    # Find and add mentions
+                    mentioned_users = re.findall(r'@(\w+)', message_text_for_mention_check)
+                    for mentioned_user in mentioned_users:
+                        db.add(Mention(
+                            message_id=new_message.id,
+                            mentioned_user=mentioned_user,
+                            message_html=message_content_html,
+                            timestamp=timestamp,
+                            read=False, is_hidden=False, channel=channel_to_parse
+                        ))
+            
+            if new_messages_count > 0:
+                db.commit()
+                print(f"Added {new_messages_count} new messages for channel '{channel_to_parse}'.")
+            else:
+                # No new messages, so no commit needed.
+                print(f"No new messages found for channel '{channel_to_parse}'.")
+
+        except Exception as e:
+            db.rollback()
+            print(f"Error parsing chat log for channel '{channel_to_parse}': {e}")
+            import traceback
+            traceback.print_exc()
 
 def scheduled_log_parsing():
     """Scheduled task to parse logs for all configured channels."""
@@ -286,114 +292,122 @@ def scheduled_log_parsing():
 
 def archive_old_messages():
     """Scheduled job to move messages older than 2 hours to the archive table."""
-    db = SessionLocal()
-    CHUNK_SIZE = 500  # Stay safely below the 999 variable limit for SQLite
+    with db_write_lock:
+        db = None
+        try:
+            db = SessionLocal()
+            CHUNK_SIZE = 500  # Stay safely below the 999 variable limit for SQLite
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
+            total_archived = 0
 
-    try:
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
-        total_archived = 0
-
-        while True:
-            # Find a chunk of messages to archive
-            messages_to_archive = db.query(Message).filter(Message.timestamp < cutoff_time).limit(CHUNK_SIZE).all()
-            
-            if not messages_to_archive:
-                break  # No more messages to archive
-
-            # Prepare data for bulk insert
-            archive_data = [
-                {
-                    "id": msg.id, "timestamp": msg.timestamp, "username": msg.username,
-                    "message_html": msg.message_html, "channel": msg.channel,
-                }
-                for msg in messages_to_archive
-            ]
-
-            if archive_data:
-                db.bulk_insert_mappings(MessageArchive, archive_data)
+            while True:
+                # Find a chunk of messages to archive
+                messages_to_archive = db.query(Message).filter(Message.timestamp < cutoff_time).limit(CHUNK_SIZE).all()
                 
-                ids_to_delete = [msg.id for msg in messages_to_archive]
-                db.query(Message).filter(Message.id.in_(ids_to_delete)).delete(synchronize_session=False)
-                
-                db.commit()  # Commit each chunk as a transaction
+                if not messages_to_archive:
+                    break  # No more messages to archive
 
-                chunk_size = len(messages_to_archive)
-                total_archived += chunk_size
-                print(f"Archived a chunk of {chunk_size} messages...")
+                # Prepare data for bulk insert
+                archive_data = [
+                    {
+                        "id": msg.id, "timestamp": msg.timestamp, "username": msg.username,
+                        "message_html": msg.message_html, "channel": msg.channel,
+                    }
+                    for msg in messages_to_archive
+                ]
 
-        if total_archived > 0:
-            print(f"Successfully archived a total of {total_archived} messages.")
-        else:
-            print("No messages to archive.")
+                if archive_data:
+                    db.bulk_insert_mappings(MessageArchive, archive_data)
+                    
+                    ids_to_delete = [msg.id for msg in messages_to_archive]
+                    db.query(Message).filter(Message.id.in_(ids_to_delete)).delete(synchronize_session=False)
+                    
+                    db.commit()  # Commit each chunk as a transaction
 
-    except Exception as e:
-        db.rollback()
-        print(f"Error during message archiving: {e}")
-    finally:
-        db.close()
+                    chunk_size = len(messages_to_archive)
+                    total_archived += chunk_size
+                    print(f"Archived a chunk of {chunk_size} messages...")
+
+            if total_archived > 0:
+                print(f"Successfully archived a total of {total_archived} messages.")
+            else:
+                print("No messages to archive.")
+
+        except Exception as e:
+            if db:
+                db.rollback()
+            print(f"Error during message archiving: {e}")
+        finally:
+            if db:
+                db.close()
 
 def cleanup_expired_persistent_sessions():
     """Scheduled job to delete expired persistent user sessions from the database."""
-    db = SessionLocal()
-    try:
-        now = datetime.now(timezone.utc)
-        expired_count = db.query(PersistentSession).filter(PersistentSession.expiry_date <= now).delete()
-        if expired_count > 0:
-            db.commit()
-            print(f"Cleaned up {expired_count} expired persistent user sessions.")
-    except Exception as e:
-        print(f"Error during expired persistent session cleanup: {e}")
-        db.rollback()
-    finally:
-        db.close()
+    with db_write_lock:
+        db = None
+        try:
+            db = SessionLocal()
+            now = datetime.now(timezone.utc)
+            expired_count = db.query(PersistentSession).filter(PersistentSession.expiry_date <= now).delete()
+            if expired_count > 0:
+                db.commit()
+                print(f"Cleaned up {expired_count} expired persistent user sessions.")
+        except Exception as e:
+            if db:
+                db.rollback()
+            print(f"Error during expired persistent session cleanup: {e}")
+        finally:
+            if db:
+                db.close()
 
 def run_migrations(engine):
     """
     Checks for and creates missing indexes on existing tables.
     This serves as a simple migration helper.
     """
-    print("Running database migrations for indexes...")
-    inspector = inspect(engine)
-    
-    # --- Indexes for 'messages' table ---
-    try:
-        message_indexes = [index['name'] for index in inspector.get_indexes('messages')]
-        if 'ix_messages_timestamp' not in message_indexes:
-            with engine.connect() as connection:
-                with connection.begin():
-                    connection.execute(text('CREATE INDEX ix_messages_timestamp ON messages (timestamp)'))
-            print("Created index: ix_messages_timestamp")
-        if 'ix_messages_channel' not in message_indexes:
-            with engine.connect() as connection:
-                with connection.begin():
-                    connection.execute(text('CREATE INDEX ix_messages_channel ON messages (channel)'))
-            print("Created index: ix_messages_channel")
-    except Exception as e:
-        print(f"Could not create indexes for 'messages' table (may not exist yet): {e}")
+    with db_write_lock:
+        print("Running database migrations for indexes...")
+        inspector = inspect(engine)
+        
+        # --- Indexes for 'messages' table ---
+        try:
+            message_indexes = [index['name'] for index in inspector.get_indexes('messages')]
+            if 'ix_messages_timestamp' not in message_indexes:
+                with engine.connect() as connection:
+                    with connection.begin():
+                        connection.execute(text('CREATE INDEX ix_messages_timestamp ON messages (timestamp)'))
+                print("Created index: ix_messages_timestamp")
+            if 'ix_messages_channel' not in message_indexes:
+                with engine.connect() as connection:
+                    with connection.begin():
+                        connection.execute(text('CREATE INDEX ix_messages_channel ON messages (channel)'))
+                print("Created index: ix_messages_channel")
+        except Exception as e:
+            print(f"Could not create indexes for 'messages' table (may not exist yet): {e}")
 
-    # --- Indexes for 'mentions' table ---
-    try:
-        mention_indexes = [index['name'] for index in inspector.get_indexes('mentions')]
-        if 'ix_mentions_timestamp' not in mention_indexes:
-            with engine.connect() as connection:
-                with connection.begin():
-                    connection.execute(text('CREATE INDEX ix_mentions_timestamp ON mentions (timestamp)'))
-            print("Created index: ix_mentions_timestamp")
-    except Exception as e:
-        print(f"Could not create indexes for 'mentions' table (may not exist yet): {e}")
+        # --- Indexes for 'mentions' table ---
+        try:
+            mention_indexes = [index['name'] for index in inspector.get_indexes('mentions')]
+            if 'ix_mentions_timestamp' not in mention_indexes:
+                with engine.connect() as connection:
+                    with connection.begin():
+                        connection.execute(text('CREATE INDEX ix_mentions_timestamp ON mentions (timestamp)'))
+                print("Created index: ix_mentions_timestamp")
+        except Exception as e:
+            print(f"Could not create indexes for 'mentions' table (may not exist yet): {e}")
 
-    # --- Indexes for 'persistent_sessions' table ---
-    try:
-        session_indexes = [index['name'] for index in inspector.get_indexes('persistent_sessions')]
-        if 'ix_persistent_sessions_expiry_date' not in session_indexes:
-            with engine.connect() as connection:
-                with connection.begin():
-                    connection.execute(text('CREATE INDEX ix_persistent_sessions_expiry_date ON persistent_sessions (expiry_date)'))
-            print("Created index: ix_persistent_sessions_expiry_date")
-    except Exception as e:
-        print(f"Could not create indexes for 'persistent_sessions' table (may not exist yet): {e}")
-    
-    print("Index migration check complete.")
+        # --- Indexes for 'persistent_sessions' table ---
+        try:
+            session_indexes = [index['name'] for index in inspector.get_indexes('persistent_sessions')]
+            if 'ix_persistent_sessions_expiry_date' not in session_indexes:
+                with engine.connect() as connection:
+                    with connection.begin():
+                        connection.execute(text('CREATE INDEX ix_persistent_sessions_expiry_date ON persistent_sessions (expiry_date)'))
+                print("Created index: ix_persistent_sessions_expiry_date")
+        except Exception as e:
+            print(f"Could not create indexes for 'persistent_sessions' table (may not exist yet): {e}")
+        
+        print("Index migration check complete.")
 
 @app.on_event("startup")
 def startup_event():
@@ -545,13 +559,14 @@ def get_mentions(username: str, db: Session = Depends(get_db), since: Optional[d
 
 @app.delete("/api/mentions/{mention_id}")
 def delete_mention(mention_id: int, db: Session = Depends(get_db)):
-    mention = db.query(Mention).filter(Mention.id == mention_id).first()
-    if not mention:
-        raise HTTPException(status_code=404, detail="Mention not found")
-    
-    mention.is_hidden = True # Set to hidden instead of deleting
-    db.commit()
-    return {"message": "Mention hidden successfully"}
+    with db_write_lock:
+        mention = db.query(Mention).filter(Mention.id == mention_id).first()
+        if not mention:
+            raise HTTPException(status_code=404, detail="Mention not found")
+        
+        mention.is_hidden = True # Set to hidden instead of deleting
+        db.commit()
+        return {"message": "Mention hidden successfully"}
 
 @app.get("/api/config", response_model=List[ConfigModel])
 def get_all_configs(db: Session = Depends(get_db)):
@@ -623,23 +638,24 @@ async def discord_callback(request: Request, code: str, db: Session = Depends(ge
     guilds_response.raise_for_status()
     guilds_data = guilds_response.json()
 
-    # Create or update user in database
-    db_user = db.query(DiscordUser).filter(DiscordUser.id == discord_id).first()
-    token_expiry = datetime.now(timezone.utc) + timedelta(seconds=token_json["expires_in"])
-    if not db_user:
-        db_user = DiscordUser(id=discord_id)
-        db.add(db_user)
+    with db_write_lock:
+        # Create or update user in database
+        db_user = db.query(DiscordUser).filter(DiscordUser.id == discord_id).first()
+        token_expiry = datetime.now(timezone.utc) + timedelta(seconds=token_json["expires_in"])
+        if not db_user:
+            db_user = DiscordUser(id=discord_id)
+            db.add(db_user)
 
-    db_user.username, db_user.discriminator, db_user.avatar = user_data["username"], user_data["discriminator"], user_data.get("avatar")
-    db_user.encrypted_access_token, db_user.encrypted_refresh_token = encrypt(token_json["access_token"]), encrypt(token_json["refresh_token"])
-    db_user.token_expiry, db_user.guilds_data = token_expiry, json.dumps(guilds_data)
-    
-    # Create long-lived session
-    session_token = secrets.token_hex(32)
-    session_expiry = datetime.now(timezone.utc) + timedelta(days=180) # ~6 months
-    new_session = PersistentSession(session_token=session_token, discord_id=discord_id, expiry_date=session_expiry)
-    db.add(new_session)
-    db.commit()
+        db_user.username, db_user.discriminator, db_user.avatar = user_data["username"], user_data["discriminator"], user_data.get("avatar")
+        db_user.encrypted_access_token, db_user.encrypted_refresh_token = encrypt(token_json["access_token"]), encrypt(token_json["refresh_token"])
+        db_user.token_expiry, db_user.guilds_data = token_expiry, json.dumps(guilds_data)
+        
+        # Create long-lived session
+        session_token = secrets.token_hex(32)
+        session_expiry = datetime.now(timezone.utc) + timedelta(days=180) # ~6 months
+        new_session = PersistentSession(session_token=session_token, discord_id=discord_id, expiry_date=session_expiry)
+        db.add(new_session)
+        db.commit()
 
     response = RedirectResponse(url=FRONTEND_REDIRECT_URI)
     
@@ -672,9 +688,10 @@ async def get_me(current_user: DiscordUser = Depends(get_current_user), db: Sess
 async def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
     if session_token:
-        # Delete the session from the database
-        db.query(PersistentSession).filter(PersistentSession.session_token == session_token).delete()
-        db.commit()
+        with db_write_lock:
+            # Delete the session from the database
+            db.query(PersistentSession).filter(PersistentSession.session_token == session_token).delete()
+            db.commit()
     
     # Instruct the browser to delete the cookie
     response.delete_cookie(key=SESSION_COOKIE_NAME)
