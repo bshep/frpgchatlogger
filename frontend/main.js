@@ -24,6 +24,7 @@ const ADVANCED_SEARCH_TAB = document.getElementById('advanced-search-tab');
 const AUTH_STATUS_MESSAGE = document.getElementById('auth-status-message');
 const DISCORD_LOGIN_BUTTON = document.getElementById('discord-login-button');
 const DISCORD_LOGOUT_BUTTON = document.getElementById('discord-logout-button');
+const MARK_ALL_AS_READ_BTN = document.getElementById('mark-all-as-read-btn');
 
 // --- State ---
 let activeChannel = 'trade';
@@ -67,6 +68,14 @@ function addEventListeners() {
   CONFIG_FORM.addEventListener('submit', handleConfigFormSubmit);
   DISCORD_LOGOUT_BUTTON.addEventListener('click', logout);
   MENTIONS_LOG_ELEMENT.addEventListener('click', handleMentionsClick);
+  MARK_ALL_AS_READ_BTN.addEventListener('click', markAllAsRead);
+}
+
+function markAllAsRead() {
+  const visibleMentions = MENTIONS_LOG_ELEMENT.querySelectorAll('[data-action="mark-as-read"]');
+  visibleMentions.forEach(button => {
+    button.click();
+  });
 }
 
 function setupAudioUnlock() {
@@ -158,6 +167,7 @@ function handleTabClick(e) {
 
     if (channel === 'advanced-search') {
       // Switch to advanced search view
+      activeChannel = 'none';
       CHANNEL_VIEW.style.display = 'none';
       ADVANCED_SEARCH_VIEW.style.display = 'block';
       stopPolling();
@@ -386,8 +396,8 @@ function displayMentions() {
             </div>
             <p class="mb-1 message-content">${mention.message_html}</p>
         </div>
-        <button type="button" class="btn btn-danger btn-sm ms-2" data-action="delete-mention" data-mention-id="${mention.id}">
-            &times;
+        <button type="button" class="btn btn-success btn-sm ms-2" data-action="mark-as-read" data-mention-id="${mention.id}">
+            &#10003; <!-- Checkmark icon -->
         </button>
       `;
       MENTIONS_LOG_ELEMENT.appendChild(mentionElement);
@@ -398,26 +408,26 @@ function displayMentions() {
 }
 
 async function handleMentionsClick(e) {
-  const deleteButton = e.target.closest('[data-action="delete-mention"]');
-  if (deleteButton) {
-    const mentionId = parseInt(deleteButton.dataset.mentionId, 10);
+  const markAsReadButton = e.target.closest('[data-action="mark-as-read"]');
+  if (markAsReadButton) {
+    const mentionId = parseInt(markAsReadButton.dataset.mentionId, 10);
       try {
         const response = await fetch(`${BACKEND_URL}/api/mentions/${mentionId}`, { method: 'DELETE' });
         if (response.ok) {
           const mentionIndex = localMentionsCache.findIndex(m => m.id === mentionId);
           if (mentionIndex !== -1) {
-            localMentionsCache[mentionIndex].is_hidden = true;
+            localMentionsCache[mentionIndex].is_hidden = true; // Still hide the message
             localStorage.setItem('localMentionsCache', JSON.stringify(localMentionsCache));
             displayMentions();
           }
-          console.log(`Mention ID ${mentionId} hidden.`);
+          console.log(`Mention ID ${mentionId} marked as read.`);
         } else {
           const errorData = await response.json();
-          alert(`Failed to hide mention: ${errorData.detail || response.statusText}`);
+          alert(`Failed to mark mention as read: ${errorData.detail || response.statusText}`);
         }
       } catch (error) {
-        console.error(`Error hiding mention ID ${mentionId}:`, error);
-        alert('Failed to hide mention.');
+        console.error(`Error marking mention ID ${mentionId} as read:`, error);
+        alert('Failed to mark mention as read.');
       }
   }
 }
