@@ -80,6 +80,7 @@ ExecStart=/var/www/frpgchatlogger/backend/venv_backend/bin/python3 -m gunicorn -
 # ExecStart=/var/www/frpgchatlogger/backend/venv_backend/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=always
 PrivateTmp=true
+EnvironmentFile=/var/www/frpgchatlogger/config/backend.env
 
 [Install]
 WantedBy=multi-user.target
@@ -98,6 +99,7 @@ WorkingDirectory=/var/www/frpgchatlogger/backend
 ExecStart=/var/www/frpgchatlogger/backend/venv_backend/bin/python3 scheduler.py
 Restart=always
 PrivateTmp=true
+EnvironmentFile=/var/www/frpgchatlogger/config/backend.env
 
 [Install]
 WantedBy=multi-user.target
@@ -107,12 +109,20 @@ SYSTEMD_SCHEDULER_SERVICE
 sudo systemctl enable frpgchatlogger_backend.service
 sudo systemctl enable frpgchatlogger_scheduler.service
 
-# 7. Set up Cron Job for Backups
+# 8. Set up Cron Job for Backups
 echo "Setting up cron job for backups..."
 cat << 'CRON_JOB' | sudo tee /etc/cron.d/frpgchatlogger-backup
 # Run database backup every 12 hours at midnight and noon
 0 0,12 * * * ec2-user /usr/local/bin/backup_db.sh >> /var/log/cron.log 2>&1
 CRON_JOB
+
+# 9. Create .env file for the backend scripts
+echo "Creating backend.env"
+cat << 'BACKEND_ENV' | sudo tee /var/www/frpgchatlogger/config/backend.env
+DISCORD_CLIENT_SECRET=<SECRET GOES HERE>
+DISCORD_CLIENT_ID=<ID GOES HERE>
+ENCRYPTION_KEY=<ENCRYPTION_KEY GOES HERE>
+BACKEND_ENV
 
 echo "User Data script finished."
 EOF
