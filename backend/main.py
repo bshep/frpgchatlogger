@@ -15,7 +15,7 @@ from cryptography.fernet import Fernet
 from dateutil.parser import parse
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 from pydantic import BaseModel
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, union_all, func
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
@@ -136,6 +136,7 @@ class UserModel(BaseModel):
 class AuthStatusModel(BaseModel):
     username: str
     is_allowed: bool
+    is_admin: bool
 
 
 # --- FastAPI App Setup ---
@@ -488,6 +489,8 @@ def startup_event():
         set_config(db, "allowed_users", "")
     if not get_config(db, "allowed_guilds"):
         set_config(db, "allowed_guilds", "")
+    if not get_config(db, "admin_users"):
+        set_config(db, "admin_users", "")
     db.close()
 
     archive_old_messages() # Run once at startup to archive old messages
@@ -527,6 +530,16 @@ def is_user_allowed(user: DiscordUser, db: Session) -> bool:
     
     return False
 
+def is_user_admin(user: DiscordUser, db: Session) -> bool:
+    """Checks if a user is in the admin users list."""
+    if not user:
+        return True
+
+    admin_users_str = get_config(db, "admin_users", "")
+    admin_users = set(u.strip() for u in admin_users_str.split(',') if u.strip())
+
+    return user.id in admin_users
+
 async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[DiscordUser]:
     """Dependency to get the current user if a valid session exists, otherwise returns None."""
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
@@ -550,6 +563,12 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> D
     user = await get_current_user_optional(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+async def get_admin_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
+    user = await get_current_user(request, db)
+    if not is_user_admin(user, db):
+        raise HTTPException(status_code=403, detail="You are not authorized to access this page.")
     return user
 # --- API Endpoints ---
 
@@ -653,6 +672,11 @@ def get_all_configs(db: Session = Depends(get_db)):
 def read_root():
     return {"status": "FRPG Chat Logger is running"}
 
+@app.get("/admin.html")
+async def get_admin_page(current_user: DiscordUser = Depends(get_admin_user)):
+    return FileResponse("frontend/admin.html")
+
+
 @app.get("/api/discord-callback")
 async def discord_callback(request: Request, code: str, db: Session = Depends(get_db)):
     DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
@@ -723,9 +747,11 @@ async def get_me(current_user: DiscordUser = Depends(get_current_user), db: Sess
     Checks if the currently logged-in user is authorized and returns their status.
     """
     allowed = is_user_allowed(current_user, db)
+    admin = is_user_admin(current_user, db)
     return AuthStatusModel(
         username=f"{current_user.username}#{current_user.discriminator}",
-        is_allowed=allowed
+        is_allowed=allowed,
+        is_admin=admin
     )
 
 @app.post("/api/logout")
