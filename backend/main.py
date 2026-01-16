@@ -212,7 +212,6 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
                 full_timestamp_str = f"{timestamp_str} {datetime.now().year}"
                 naive_timestamp = parse(full_timestamp_str)
                 timestamp = chicago_tz.localize(naive_timestamp, is_dst=None)
-                print(f"{naive_timestamp}, {timestamp}")
             except ValueError:
                 continue
 
@@ -489,19 +488,6 @@ def startup_event():
     if not get_config(db, "allowed_guilds"):
         set_config(db, "allowed_guilds", "")
     db.close()
-
-    archive_old_messages() # Run once at startup to archive old messages
-    deduplicate_messages() # Run once at startup to deduplicate messages
-    
-    scheduler = BackgroundScheduler()
-    # Schedule to run every 3 seconds
-    scheduler.add_job(scheduled_log_parsing, 'interval', seconds=5, max_instances=1)
-    scheduler.add_job(archive_old_messages, 'interval', hours=1, max_instances=1)
-    scheduler.add_job(cleanup_expired_persistent_sessions, 'interval', hours=1, max_instances=1)
-    scheduler.add_job(deduplicate_messages, 'interval', seconds=60, max_instances=1)
-    # Schedule to run once immediately
-    scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1))
-    scheduler.start()
 
 # --- Authentication / Authorization Helpers ---
 def is_user_allowed(user: DiscordUser, db: Session) -> bool:

@@ -85,8 +85,27 @@ PrivateTmp=true
 WantedBy=multi-user.target
 SYSTEMD_SERVICE
 
+# 7. Create Systemd Service for Scheduler
+cat << 'SYSTEMD_SCHEDULER_SERVICE' | sudo tee /etc/systemd/system/frpgchatlogger_scheduler.service
+[Unit]
+Description=APScheduler instance for frpgchatlogger
+After=network.target
+
+[Service]
+User=ec2-user
+Group=nginx
+WorkingDirectory=/var/www/frpgchatlogger/backend
+ExecStart=/var/www/frpgchatlogger/backend/venv_backend/bin/python3 scheduler.py
+Restart=always
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+SYSTEMD_SCHEDULER_SERVICE
+
 # Enable systemd service. It will start successfully once the application code is deployed.
 sudo systemctl enable frpgchatlogger_backend.service
+sudo systemctl enable frpgchatlogger_scheduler.service
 
 # 7. Set up Cron Job for Backups
 echo "Setting up cron job for backups..."
