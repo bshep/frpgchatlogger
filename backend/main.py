@@ -495,6 +495,10 @@ def startup_event():
 # --- Authentication / Authorization Helpers ---
 def is_user_allowed(user: DiscordUser, db: Session) -> bool:
     """Checks if a user is in the allowed users list or in an allowed guild."""
+    # --- Dev Mode Auth Bypass ---
+    if os.getenv("DEV_MODE_BYPASS_AUTH", "false").lower() == "true":
+        return True
+    # --- End Dev Mode Auth Bypass ---
     if not user:
         return False
 
@@ -518,6 +522,10 @@ def is_user_allowed(user: DiscordUser, db: Session) -> bool:
 
 def is_user_admin(user: DiscordUser, db: Session) -> bool:
     """Checks if a user is in the admin users list."""
+    # --- Dev Mode Auth Bypass ---
+    if os.getenv("DEV_MODE_BYPASS_AUTH", "false").lower() == "true":
+        return True
+    # --- End Dev Mode Auth Bypass ---
     if not user:
         return True
 
@@ -528,6 +536,20 @@ def is_user_admin(user: DiscordUser, db: Session) -> bool:
 
 async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[DiscordUser]:
     """Dependency to get the current user if a valid session exists, otherwise returns None."""
+    # --- Dev Mode Auth Bypass ---
+    if os.getenv("DEV_MODE_BYPASS_AUTH", "false").lower() == "true":
+        print("--- DEV MODE: Bypassing authentication. Returning mock user. ---")
+        return DiscordUser(
+            id="123456789",
+            username="DevUser",
+            discriminator="0000",
+            avatar=None,
+            encrypted_access_token="dummy_token",
+            encrypted_refresh_token="dummy_token",
+            token_expiry=datetime.now(timezone.utc) + timedelta(days=1),
+            guilds_data='[]' # No guilds by default
+        )
+    # --- End Dev Mode Auth Bypass ---
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_token:
         return None
