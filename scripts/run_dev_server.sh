@@ -57,6 +57,13 @@ tmux split-window -v
 # Send the frontend command to the new pane (window 0, pane 1)
 tmux send-keys -t "$SESSION_NAME:0.1" "echo '--- Starting Frontend Server ---'; cd frontend && npm run dev" C-m
 
+# Split the window horizontally to create a new pane
+tmux split-window -h
+
+# Send the scheduler command to the new pane (window 0, pane 1)
+tmux send-keys -t "$SESSION_NAME:0.2" "echo '--- Starting Scheduler ---'; cd backend && source venv/bin/activate && export ENCRYPTION_KEY="T-XKIzPJkqPyFMWPlokCnq5msDRZHtKkcmuKPj9XdOI=" && python3 scheduler.py" C-m
+
+
 # Set a more balanced layout
 tmux select-layout even-vertical
 
