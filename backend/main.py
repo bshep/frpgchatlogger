@@ -490,6 +490,8 @@ def startup_event():
         set_config(db, "allowed_guilds", "")
     if not get_config(db, "admin_users"):
         set_config(db, "admin_users", "")
+    if not get_config(db, "scheduler_polling_interval"):
+        set_config(db, "scheduler_polling_interval", "5")
     db.close()
 
 # --- Authentication / Authorization Helpers ---
@@ -666,11 +668,16 @@ def delete_mention(mention_id: int, db: Session = Depends(get_db)):
 def get_all_configs(db: Session = Depends(get_db)):
     return db.query(Config).all()
 
-# Turned off to prevent unauthorized config changes, eventually can implement auth.
-# @app.post("/api/config", response_model=ConfigModel)
-# def update_channel_config(key: str, value: str, db: Session = Depends(get_db)):
-#     # Allow 'channels_to_track' to be configured via the API.
-#     if key not in ["channels_to_track"]:
+class ConfigUpdateRequest(BaseModel):
+    configs: List[ConfigModel]
+
+@app.post("/api/config")
+def update_config(request: ConfigUpdateRequest, db: Session = Depends(get_db), admin_user: DiscordUser = Depends(get_admin_user)):
+    allowed_keys = ["allowed_users", "allowed_guilds", "admin_users", "channels_to_track", "scheduler_polling_interval"]
+    for config_item in request.configs:
+        if config_item.key in allowed_keys:
+            set_config(db, config_item.key, config_item.value)
+    return {"message": "Configuration updated successfully."}
 
 
 
