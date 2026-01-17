@@ -83,9 +83,11 @@ function markAllAsRead() {
 function setupAudioUnlock() {
   const unlockAudio = () => {
     if (MENTION_SOUND.paused) {
+      MENTION_SOUND.muted = true;
       MENTION_SOUND.play().catch(e => console.warn("Audio autoplay failed.", e)).then(() => {
         MENTION_SOUND.pause();
         MENTION_SOUND.currentTime = 0;
+        MENTION_SOUND.muted = false;
       });
     }
     document.removeEventListener('click', unlockAudio);
