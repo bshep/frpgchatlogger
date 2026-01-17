@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FRPG Chat Logger - Admin</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <div id="app" class="container mt-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="text-center">Admin Console</h1>
+        <a href="/" class="btn btn-primary">Back to Chat</a>
+      </div>
+
+      <div class="row">
+        <div class="col-md-6">
+          <h2>Authorization</h2>
+          <p class="text-muted">Manage who can use special features (like search) and who can access this admin panel. Add one Discord ID per line.</p>
+          <form id="config-form">
+            <div class="mb-3">
+              <label for="allowed-users" class="form-label">Allowed User IDs</label>
+              <textarea class="form-control" id="allowed-users" rows="5"></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="allowed-guilds" class="form-label">Allowed Guild (Server) IDs</label>
+              <textarea class="form-control" id="allowed-guilds" rows="5"></textarea>
+            </div>
+            <div class="mb-3">
+              <label for="admin-users" class="form-label">Admin User IDs</label>
+              <textarea class="form-control" id="admin-users" rows="5"></textarea>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <h2>Channel Configuration</h2>
+            <p class="text-muted">Configure which channels are monitored by the log parser.</p>
+            <div class="mb-3">
+              <label for="monitored-channels" class="form-label">Monitored Channels</label>
+              <textarea class="form-control" id="monitored-channels" rows="5" placeholder="trade&#10;giveaways"></textarea>
+              <div class="form-text">Add one channel name per line (e.g., "trade", "giveaways").</div>
+            </div>
+            <div class="mb-3">
+                <label for="scheduler-polling-interval" class="form-label">Log Polling Interval (seconds)</label>
+                <input type="number" class="form-control" id="scheduler-polling-interval" value="5">
+                <div class="form-text">How often the backend fetches new chat logs from the game. Minimum 3 seconds.</div>
+            </div>
+            <div class="mt-4">
+              <button type="submit" form="config-form" class="btn btn-success">Save All Settings</button>
+              <p id="save-status" class="mt-2 mb-0"></p>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/admin.js"></script>
+  </body>
+</html>

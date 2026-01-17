@@ -49,7 +49,7 @@ echo "Creating new tmux session: $SESSION_NAME"
 tmux new-session -d -s "$SESSION_NAME" -n "Backend"
 
 # Send the backend command to the first pane (window 0, pane 0)
-tmux send-keys -t "$SESSION_NAME:0.0" "echo '--- Starting Backend Server ---'; cd backend && source venv/bin/activate && export ENCRYPTION_KEY="T-XKIzPJkqPyFMWPlokCnq5msDRZHtKkcmuKPj9XdOI=" && uvicorn main:app --reload --host 0.0.0.0 --port 8000" C-m
+tmux send-keys -t "$SESSION_NAME:0.0" "echo '--- Starting Backend Server ---'; cd backend && source venv/bin/activate && export ENCRYPTION_KEY="T-XKIzPJkqPyFMWPlokCnq5msDRZHtKkcmuKPj9XdOI=" && export DEV_MODE_BYPASS_AUTH="true" && uvicorn main:app --reload --host 0.0.0.0 --port 8000" C-m
 
 # Split the window vertically to create a new pane
 tmux split-window -v

@@ -15,7 +15,7 @@ from cryptography.fernet import Fernet
 from dateutil.parser import parse
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 from pydantic import BaseModel
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, union_all, func
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
@@ -136,6 +136,7 @@ class UserModel(BaseModel):
 class AuthStatusModel(BaseModel):
     username: str
     is_allowed: bool
+    is_admin: bool
 
 
 # --- FastAPI App Setup ---
@@ -487,11 +488,19 @@ def startup_event():
         set_config(db, "allowed_users", "")
     if not get_config(db, "allowed_guilds"):
         set_config(db, "allowed_guilds", "")
+    if not get_config(db, "admin_users"):
+        set_config(db, "admin_users", "")
+    if not get_config(db, "scheduler_polling_interval"):
+        set_config(db, "scheduler_polling_interval", "5")
     db.close()
 
 # --- Authentication / Authorization Helpers ---
 def is_user_allowed(user: DiscordUser, db: Session) -> bool:
     """Checks if a user is in the allowed users list or in an allowed guild."""
+    # --- Dev Mode Auth Bypass ---
+    if os.getenv("DEV_MODE_BYPASS_AUTH", "false").lower() == "true":
+        return True
+    # --- End Dev Mode Auth Bypass ---
     if not user:
         return False
 
@@ -513,8 +522,36 @@ def is_user_allowed(user: DiscordUser, db: Session) -> bool:
     
     return False
 
+def is_user_admin(user: DiscordUser, db: Session) -> bool:
+    """Checks if a user is in the admin users list."""
+    # --- Dev Mode Auth Bypass ---
+    if os.getenv("DEV_MODE_BYPASS_AUTH", "false").lower() == "true":
+        return True
+    # --- End Dev Mode Auth Bypass ---
+    if not user:
+        return True
+
+    admin_users_str = get_config(db, "admin_users", "")
+    admin_users = set(u.strip() for u in admin_users_str.split(',') if u.strip())
+
+    return user.id in admin_users
+
 async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[DiscordUser]:
     """Dependency to get the current user if a valid session exists, otherwise returns None."""
+    # --- Dev Mode Auth Bypass ---
+    if os.getenv("DEV_MODE_BYPASS_AUTH", "false").lower() == "true":
+        print("--- DEV MODE: Bypassing authentication. Returning mock user. ---")
+        return DiscordUser(
+            id="123456789",
+            username="DevUser",
+            discriminator="0000",
+            avatar=None,
+            encrypted_access_token="dummy_token",
+            encrypted_refresh_token="dummy_token",
+            token_expiry=datetime.now(timezone.utc) + timedelta(days=1),
+            guilds_data='[]' # No guilds by default
+        )
+    # --- End Dev Mode Auth Bypass ---
     session_token = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_token:
         return None
@@ -536,6 +573,12 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)) -> D
     user = await get_current_user_optional(request, db)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+async def get_admin_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
+    user = await get_current_user(request, db)
+    if not is_user_admin(user, db):
+        raise HTTPException(status_code=403, detail="You are not authorized to access this page.")
     return user
 # --- API Endpoints ---
 
@@ -625,11 +668,16 @@ def delete_mention(mention_id: int, db: Session = Depends(get_db)):
 def get_all_configs(db: Session = Depends(get_db)):
     return db.query(Config).all()
 
-# Turned off to prevent unauthorized config changes, eventually can implement auth.
-# @app.post("/api/config", response_model=ConfigModel)
-# def update_channel_config(key: str, value: str, db: Session = Depends(get_db)):
-#     # Allow 'channels_to_track' to be configured via the API.
-#     if key not in ["channels_to_track"]:
+class ConfigUpdateRequest(BaseModel):
+    configs: List[ConfigModel]
+
+@app.post("/api/config")
+def update_config(request: ConfigUpdateRequest, db: Session = Depends(get_db), admin_user: DiscordUser = Depends(get_admin_user)):
+    allowed_keys = ["allowed_users", "allowed_guilds", "admin_users", "channels_to_track", "scheduler_polling_interval"]
+    for config_item in request.configs:
+        if config_item.key in allowed_keys:
+            set_config(db, config_item.key, config_item.value)
+    return {"message": "Configuration updated successfully."}
 
 
 
@@ -638,6 +686,11 @@ def get_all_configs(db: Session = Depends(get_db)):
 @app.get("/")
 def read_root():
     return {"status": "FRPG Chat Logger is running"}
+
+@app.get("/admin.html")
+async def get_admin_page(current_user: DiscordUser = Depends(get_admin_user)):
+    return FileResponse("frontend/admin.html")
+
 
 @app.get("/api/discord-callback")
 async def discord_callback(request: Request, code: str, db: Session = Depends(get_db)):
@@ -709,9 +762,11 @@ async def get_me(current_user: DiscordUser = Depends(get_current_user), db: Sess
     Checks if the currently logged-in user is authorized and returns their status.
     """
     allowed = is_user_allowed(current_user, db)
+    admin = is_user_admin(current_user, db)
     return AuthStatusModel(
         username=f"{current_user.username}#{current_user.discriminator}",
-        is_allowed=allowed
+        is_allowed=allowed,
+        is_admin=admin
     )
 
 @app.post("/api/logout")
