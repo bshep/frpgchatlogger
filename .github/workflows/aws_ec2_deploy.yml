@@ -47,6 +47,9 @@ jobs:
         # Note: If backend contains sensitive files (like .env), adjust scp to exclude them.
         scp -o StrictHostKeyChecking=no -i deploy_key.pem -r backend $EC2_USER@$EC2_HOST:$DEPLOY_DIR/
 
+        # Transfer analysis files
+        scp -o StrictHostKeyChecking=no -i deploy_key.pem -r analysis $EC2_USER@$EC2_HOST:$DEPLOY_DIR/
+
         # Transfer frontend build output
         # Ensure 'dist' matches your actual frontend build output directory.
         scp -o StrictHostKeyChecking=no -i deploy_key.pem -r frontend/dist/* $EC2_USER@$EC2_HOST:$DEPLOY_DIR/html/

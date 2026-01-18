@@ -2,6 +2,8 @@ import os
 import json
 import re
 import secrets
+import subprocess
+import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -480,18 +482,18 @@ def startup_event():
     run_migrations(engine) # Run migrations to create indexes if they don't exist
 
     db = SessionLocal()
-    # Set default channels to track if not already configured
-    if not get_config(db, "channels_to_track"):
-        set_config(db, "channels_to_track", "trade,giveaways")
-    # Set default allowed lists if not already configured
-    if not get_config(db, "allowed_users"):
-        set_config(db, "allowed_users", "")
-    if not get_config(db, "allowed_guilds"):
-        set_config(db, "allowed_guilds", "")
-    if not get_config(db, "admin_users"):
-        set_config(db, "admin_users", "")
-    if not get_config(db, "scheduler_polling_interval"):
-        set_config(db, "scheduler_polling_interval", "5")
+    # Set default configs if not already configured
+    defaults = {
+        "channels_to_track": "trade,giveaways",
+        "allowed_users": "",
+        "allowed_guilds": "",
+        "admin_users": "",
+        "scheduler_polling_interval": "5",
+        "analysis_chunk_size": "50"
+    }
+    for key, value in defaults.items():
+        if not get_config(db, key):
+            set_config(db, key, value)
     db.close()
 
 # --- Authentication / Authorization Helpers ---
@@ -673,7 +675,7 @@ class ConfigUpdateRequest(BaseModel):
 
 @app.post("/api/config")
 def update_config(request: ConfigUpdateRequest, db: Session = Depends(get_db), admin_user: DiscordUser = Depends(get_admin_user)):
-    allowed_keys = ["allowed_users", "allowed_guilds", "admin_users", "channels_to_track", "scheduler_polling_interval"]
+    allowed_keys = ["allowed_users", "allowed_guilds", "admin_users", "channels_to_track", "scheduler_polling_interval", "analysis_chunk_size"]
     for config_item in request.configs:
         if config_item.key in allowed_keys:
             set_config(db, config_item.key, config_item.value)
@@ -681,6 +683,9 @@ def update_config(request: ConfigUpdateRequest, db: Session = Depends(get_db), a
 
 
 
+
+import subprocess
+import sqlite3
 
 # --- API Endpoints ---
 @app.get("/")
@@ -690,6 +695,82 @@ def read_root():
 @app.get("/admin.html")
 async def get_admin_page(current_user: DiscordUser = Depends(get_admin_user)):
     return FileResponse("frontend/admin.html")
+
+
+class AnalysisRequest(BaseModel):
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+@app.post("/api/trigger-analysis")
+async def trigger_analysis(
+    request: AnalysisRequest, 
+    db: Session = Depends(get_db), 
+    admin_user: DiscordUser = Depends(get_admin_user)
+):
+    """
+    Triggers the chat analysis script.
+    """
+    # For now dont want this available to run from the production server
+    return {"message": "This function is currently not enabled"}
+
+    try:
+        # Construct the command to run the analysis script
+        command = ["python", "../analysis/analysis.py"]
+        if request.start_date:
+            command.extend(["--start-date", request.start_date])
+        if request.end_date:
+            command.extend(["--end-date", request.end_date])
+
+        # Run the analysis script
+        process = subprocess.run(command, capture_output=True, text=True, check=True)
+        print("Analysis script stdout:", process.stdout)
+        print("Analysis script stderr:", process.stderr)
+
+        return {"message": "Analysis triggered successfully."}
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error running analysis script: {e}")
+        print(f"Stderr: {e.stderr}")
+        raise HTTPException(status_code=500, detail=f"Error running analysis script: {e.stderr}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+@app.get("/api/get-analysis-results")
+async def get_analysis_results(admin_user: DiscordUser = Depends(get_admin_user)):
+    """
+    Retrieves the latest chat analysis results from the database.
+    """
+    try:
+        analysis_db_path = '../chat_analysis.db'
+        if not os.path.exists(analysis_db_path):
+            return {"trades": [], "transactions": []} # Return empty if db doesn't exist yet
+
+        conn = sqlite3.connect(analysis_db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Fetch trades
+        try:
+            c.execute("SELECT * FROM trades")
+            trades = [dict(row) for row in c.fetchall()]
+        except sqlite3.OperationalError:
+            trades = []
+
+        # Fetch transactions
+        try:
+            c.execute("SELECT * FROM transactions")
+            transactions = [dict(row) for row in c.fetchall()]
+        except sqlite3.OperationalError:
+            transactions = []
+
+        conn.close()
+
+        return {"trades": trades, "transactions": transactions}
+
+    except Exception as e:
+        print(f"An unexpected error occurred while fetching analysis results: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
 @app.get("/api/discord-callback")

@@ -45,6 +45,11 @@
                 <input type="number" class="form-control" id="scheduler-polling-interval" value="5">
                 <div class="form-text">How often the backend fetches new chat logs from the game. Minimum 3 seconds.</div>
             </div>
+            <div class="mb-3">
+                <label for="analysis-chunk-size" class="form-label">Analysis Message Chunk Size</label>
+                <input type="number" class="form-control" id="analysis-chunk-size" value="50">
+                <div class="form-text">How many messages are sent to the LLM in each batch for analysis.</div>
+            </div>
             <div class="mt-4">
               <button type="submit" form="config-form" class="btn btn-success">Save All Settings</button>
               <p id="save-status" class="mt-2 mb-0"></p>

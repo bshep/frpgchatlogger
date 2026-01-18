@@ -11,6 +11,7 @@ const allowedGuildsTextarea = document.getElementById('allowed-guilds');
 const adminUsersTextarea = document.getElementById('admin-users');
 const channelsTextarea = document.getElementById('monitored-channels');
 const schedulerPollingIntervalInput = document.getElementById('scheduler-polling-interval');
+const analysisChunkSizeInput = document.getElementById('analysis-chunk-size');
 const saveStatus = document.getElementById('save-status');
 
 // --- Initialization ---
@@ -35,12 +36,14 @@ async function fetchConfig() {
         const adminUsers = configs.find(c => c.key === 'admin_users')?.value || '';
         const channels = configs.find(c => c.key === 'channels_to_track')?.value || '';
         const pollingInterval = configs.find(c => c.key === 'scheduler_polling_interval')?.value || '5';
+        const analysisChunkSize = configs.find(c => c.key === 'analysis_chunk_size')?.value || '50';
 
         allowedUsersTextarea.value = allowedUsers.split(',').join('\n');
         allowedGuildsTextarea.value = allowedGuilds.split(',').join('\n');
         adminUsersTextarea.value = adminUsers.split(',').join('\n');
         channelsTextarea.value = channels.split(',').join('\n');
         schedulerPollingIntervalInput.value = pollingInterval;
+        analysisChunkSizeInput.value = analysisChunkSize;
 
     } catch (error) {
         console.error('Error fetching config:', error);
@@ -59,7 +62,8 @@ async function handleConfigSave(event) {
         { key: 'allowed_guilds', value: allowedGuildsTextarea.value.split('\n').filter(g => g.trim()).join(',') },
         { key: 'admin_users', value: adminUsersTextarea.value.split('\n').filter(u => u.trim()).join(',') },
         { key: 'channels_to_track', value: channelsTextarea.value.split('\n').filter(c => c.trim()).join(',') },
-        { key: 'scheduler_polling_interval', value: schedulerPollingIntervalInput.value }
+        { key: 'scheduler_polling_interval', value: schedulerPollingIntervalInput.value },
+        { key: 'analysis_chunk_size', value: analysisChunkSizeInput.value }
     ];
 
     try {

@@ -47,3 +47,4 @@ backend/chatlog.db
 frpgchatlogger-key-pair.pem
 chatlog_backup_*.db.gz
 backups
+chat_analysis.db

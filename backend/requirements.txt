@@ -7,3 +7,4 @@ sqlalchemy
 python-dateutil
 python-dotenv
 cryptography
+openai
