@@ -491,7 +491,9 @@ def startup_event():
         "analysis_chunk_size": "50",
         "conversion_rate_ap_to_gold": "60",
         "conversion_rate_oj_to_gold": "10",
-        "conversion_rate_ac_to_gold": "25"
+        "conversion_rate_ac_to_gold": "25",
+        "analysis_allowed_users": "",
+        "analysis_allowed_guilds": ""
     }
     for key, value in defaults.items():
         if not get_config(db, key):
@@ -540,6 +542,27 @@ def is_user_admin(user: DiscordUser, db: Session) -> bool:
 
     return user.id in admin_users
 
+def is_user_analysis_allowed(user: DiscordUser, db: Session) -> bool:
+    """Checks if a user is an admin or in the analysis-specific allow lists."""
+    if is_user_admin(user, db):
+        return True
+
+    analysis_users_str = get_config(db, "analysis_allowed_users", "")
+    analysis_guilds_str = get_config(db, "analysis_allowed_guilds", "")
+    
+    analysis_users = set(u.strip() for u in analysis_users_str.split(',') if u.strip())
+    analysis_guilds = set(g.strip() for g in analysis_guilds_str.split(',') if g.strip())
+
+    if user.id in analysis_users:
+        return True
+
+    user_guilds = json.loads(user.guilds_data)
+    user_guild_ids = {guild['id'] for guild in user_guilds}
+    if analysis_guilds.intersection(user_guild_ids):
+        return True
+    
+    return False
+
 async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[DiscordUser]:
     """Dependency to get the current user if a valid session exists, otherwise returns None."""
     # --- Dev Mode Auth Bypass ---
@@ -584,6 +607,13 @@ async def get_admin_user(request: Request, db: Session = Depends(get_db)) -> Dis
     if not is_user_admin(user, db):
         raise HTTPException(status_code=403, detail="You are not authorized to access this page.")
     return user
+
+async def get_analysis_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
+    user = await get_current_user(request, db)
+    if not is_user_analysis_allowed(user, db):
+        raise HTTPException(status_code=403, detail="You are not authorized to access this feature.")
+    return user
+
 # --- API Endpoints ---
 
 @app.get("/api/messages", response_model=List[MessageModel])
@@ -680,28 +710,18 @@ def update_config(request: ConfigUpdateRequest, db: Session = Depends(get_db), a
     allowed_keys = [
         "allowed_users", "allowed_guilds", "admin_users", 
         "channels_to_track", "scheduler_polling_interval", "analysis_chunk_size",
-        "conversion_rate_ap_to_gold", "conversion_rate_oj_to_gold", "conversion_rate_ac_to_gold"
+        "conversion_rate_ap_to_gold", "conversion_rate_oj_to_gold", "conversion_rate_ac_to_gold",
+        "analysis_allowed_users", "analysis_allowed_guilds"
     ]
     for config_item in request.configs:
         if config_item.key in allowed_keys:
             set_config(db, config_item.key, config_item.value)
     return {"message": "Configuration updated successfully."}
 
-
-
-
-import subprocess
-import sqlite3
-
-# --- API Endpoints ---
-@app.get("/")
-def read_root():
-    return {"status": "FRPG Chat Logger is running"}
-
-@app.get("/admin.html")
-async def get_admin_page(current_user: DiscordUser = Depends(get_admin_user)):
-    return FileResponse("frontend/admin.html")
-
+# --- Analysis Endpoints ---
+@app.get("/analysis.html")
+async def get_analysis_page(current_user: DiscordUser = Depends(get_analysis_user)):
+    return FileResponse("frontend/analysis.html")
 
 class AnalysisRequest(BaseModel):
     start_date: Optional[str] = None
@@ -743,7 +763,7 @@ async def trigger_analysis(
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 @app.get("/api/get-analysis-results")
-async def get_analysis_results(admin_user: DiscordUser = Depends(get_admin_user)):
+async def get_analysis_results(analysis_user: DiscordUser = Depends(get_analysis_user)):
     """
     Retrieves the latest chat analysis results from the database.
     """
@@ -778,6 +798,15 @@ async def get_analysis_results(admin_user: DiscordUser = Depends(get_admin_user)
         print(f"An unexpected error occurred while fetching analysis results: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
+
+# --- General Endpoints ---
+@app.get("/")
+def read_root():
+    return {"status": "FRPG Chat Logger is running"}
+
+@app.get("/admin.html")
+async def get_admin_page(current_user: DiscordUser = Depends(get_admin_user)):
+    return FileResponse("frontend/admin.html")
 
 @app.get("/api/discord-callback")
 async def discord_callback(request: Request, code: str, db: Session = Depends(get_db)):

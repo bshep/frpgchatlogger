@@ -9,6 +9,8 @@ const configForm = document.getElementById('config-form');
 const allowedUsersTextarea = document.getElementById('allowed-users');
 const allowedGuildsTextarea = document.getElementById('allowed-guilds');
 const adminUsersTextarea = document.getElementById('admin-users');
+const analysisAllowedUsersTextarea = document.getElementById('analysis_allowed_users');
+const analysisAllowedGuildsTextarea = document.getElementById('analysis_allowed_guilds');
 const channelsTextarea = document.getElementById('monitored-channels');
 const schedulerPollingIntervalInput = document.getElementById('scheduler-polling-interval');
 const analysisChunkSizeInput = document.getElementById('analysis-chunk-size');
@@ -38,6 +40,8 @@ async function fetchConfig() {
         allowedUsersTextarea.value = getConfigValue('allowed_users').split(',').join('\n');
         allowedGuildsTextarea.value = getConfigValue('allowed_guilds').split(',').join('\n');
         adminUsersTextarea.value = getConfigValue('admin_users').split(',').join('\n');
+        analysisAllowedUsersTextarea.value = getConfigValue('analysis_allowed_users').split(',').join('\n');
+        analysisAllowedGuildsTextarea.value = getConfigValue('analysis_allowed_guilds').split(',').join('\n');
         channelsTextarea.value = getConfigValue('channels_to_track').split(',').join('\n');
         schedulerPollingIntervalInput.value = getConfigValue('scheduler_polling_interval', '5');
         analysisChunkSizeInput.value = getConfigValue('analysis_chunk_size', '50');
@@ -57,11 +61,15 @@ async function handleConfigSave(event) {
     saveStatus.textContent = 'Saving...';
     saveStatus.className = 'text-info';
 
+    const getTaValue = (ta) => ta.value.split('\n').filter(u => u.trim()).join(',');
+
     const configs = [
-        { key: 'allowed_users', value: allowedUsersTextarea.value.split('\n').filter(u => u.trim()).join(',') },
-        { key: 'allowed_guilds', value: allowedGuildsTextarea.value.split('\n').filter(g => g.trim()).join(',') },
-        { key: 'admin_users', value: adminUsersTextarea.value.split('\n').filter(u => u.trim()).join(',') },
-        { key: 'channels_to_track', value: channelsTextarea.value.split('\n').filter(c => c.trim()).join(',') },
+        { key: 'allowed_users', value: getTaValue(allowedUsersTextarea) },
+        { key: 'allowed_guilds', value: getTaValue(allowedGuildsTextarea) },
+        { key: 'admin_users', value: getTaValue(adminUsersTextarea) },
+        { key: 'analysis_allowed_users', value: getTaValue(analysisAllowedUsersTextarea) },
+        { key: 'analysis_allowed_guilds', value: getTaValue(analysisAllowedGuildsTextarea) },
+        { key: 'channels_to_track', value: getTaValue(channelsTextarea) },
         { key: 'scheduler_polling_interval', value: schedulerPollingIntervalInput.value },
         { key: 'analysis_chunk_size', value: analysisChunkSizeInput.value },
         { key: 'conversion_rate_ap_to_gold', value: conversionApInput.value },

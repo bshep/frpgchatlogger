@@ -10,74 +10,85 @@
   <body>
     <div id="app" class="container mt-4">
       <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="text-center">Admin Console</h1>
-        <a href="/" class="btn btn-primary">Back to Chat</a>
-      </div>
-
-      <div class="row">
-        <div class="col-md-6">
-          <h2>Authorization</h2>
-          <p class="text-muted">Manage who can use special features (like search) and who can access this admin panel. Add one Discord ID per line.</p>
-          <form id="config-form">
-            <div class="mb-3">
-              <label for="allowed-users" class="form-label">Allowed User IDs</label>
-              <textarea class="form-control" id="allowed-users" rows="5"></textarea>
-            </div>
-            <div class="mb-3">
-              <label for="allowed-guilds" class="form-label">Allowed Guild (Server) IDs</label>
-              <textarea class="form-control" id="allowed-guilds" rows="5"></textarea>
-            </div>
-            <div class="mb-3">
-              <label for="admin-users" class="form-label">Admin User IDs</label>
-              <textarea class="form-control" id="admin-users" rows="5"></textarea>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <h2>General Configuration</h2>
-            <div class="mb-3">
-              <label for="monitored-channels" class="form-label">Monitored Channels</label>
-              <textarea class="form-control" id="monitored-channels" rows="5" placeholder="trade&#10;giveaways"></textarea>
-              <div class="form-text">Add one channel name per line.</div>
-            </div>
-            <div class="mb-3">
-                <label for="scheduler-polling-interval" class="form-label">Log Polling Interval (seconds)</label>
-                <input type="number" class="form-control" id="scheduler-polling-interval" value="5">
-                <div class="form-text">How often the backend fetches new chat logs.</div>
-            </div>
-            <div class="mb-3">
-                <label for="analysis-chunk-size" class="form-label">Analysis Message Chunk Size</label>
-                <input type="number" class="form-control" id="analysis-chunk-size" value="50">
-                <div class="form-text">How many messages are sent to the LLM in each batch.</div>
-            </div>
-        </div>
-      </div>
-      <div class="row mt-4">
-        <div class="col-12">
-            <h2>Currency Conversion (per 1000 items)</h2>
-            <div class="row">
-                 <div class="col-md-4">
-                    <label for="conversion-ap" class="form-label">Apple Points (AP) to Gold</label>
-                    <input type="number" class="form-control" id="conversion_rate_ap_to_gold">
-                 </div>
-                 <div class="col-md-4">
-                    <label for="conversion-oj" class="form-label">Orange Jello (OJ) to Gold</label>
-                    <input type="number" class="form-control" id="conversion_rate_oj_to_gold">
-                 </div>
-                 <div class="col-md-4">
-                    <label for="conversion-ac" class="form-label">Ancient Coins (AC) to Gold</label>
-                    <input type="number" class="form-control" id="conversion_rate_ac_to_gold">
-                 </div>
-            </div>
+        <h1>Admin Console</h1>
+        <div>
+            <a href="/analysis.html" class="btn btn-info">Analysis Page</a>
+            <a href="/" class="btn btn-primary">Back to Chat</a>
         </div>
       </div>
 
-      <div class="row mt-4">
-        <div class="col-12">
-            <button type="submit" form="config-form" class="btn btn-success">Save All Settings</button>
-            <p id="save-status" class="mt-2 mb-0"></p>
+      <form id="config-form">
+        <div class="row">
+            <div class="col-md-6">
+            <h2>Authorization</h2>
+            <p class="text-muted">Manage who can use special features (like search) and who can access this admin panel. Add one Discord ID per line.</p>
+            <div class="mb-3">
+                <label for="allowed-users" class="form-label">Allowed User IDs</label>
+                <textarea class="form-control" id="allowed-users" rows="3"></textarea>
+            </div>
+            <div class="mb-3">
+                <label for="allowed-guilds" class="form-label">Allowed Guild (Server) IDs</label>
+                <textarea class="form-control" id="allowed-guilds" rows="3"></textarea>
+            </div>
+            <div class="mb-3">
+                <label for="admin-users" class="form-label">Admin User IDs</label>
+                <textarea class="form-control" id="admin-users" rows="3"></textarea>
+            </div>
+            
+            <h2 class="mt-4">Analysis Permissions</h2>
+            <p class="text-muted">Manage who can view the analysis page. Admins always have access.</p>
+            <div class="mb-3">
+                <label for="analysis_allowed_users" class="form-label">Analysis-Allowed User IDs</label>
+                <textarea class="form-control" id="analysis_allowed_users" rows="3"></textarea>
+            </div>
+            <div class="mb-3">
+                <label for="analysis_allowed_guilds" class="form-label">Analysis-Allowed Guild IDs</label>
+                <textarea class="form-control" id="analysis_allowed_guilds" rows="3"></textarea>
+            </div>
+            </div>
+            <div class="col-md-6">
+                <h2>General Configuration</h2>
+                <div class="mb-3">
+                <label for="monitored-channels" class="form-label">Monitored Channels</label>
+                <textarea class="form-control" id="monitored-channels" rows="3" placeholder="trade&#10;giveaways"></textarea>
+                <div class="form-text">Add one channel name per line.</div>
+                </div>
+                <div class="mb-3">
+                    <label for="scheduler-polling-interval" class="form-label">Log Polling Interval (seconds)</label>
+                    <input type="number" class="form-control" id="scheduler-polling-interval" value="5">
+                    <div class="form-text">How often the backend fetches new chat logs.</div>
+                </div>
+                <div class="mb-3">
+                    <label for="analysis-chunk-size" class="form-label">Analysis Message Chunk Size</label>
+                    <input type="number" class="form-control" id="analysis-chunk-size" value="50">
+                    <div class="form-text">How many messages are sent to the LLM in each batch.</div>
+                </div>
+
+                <h2 class="mt-4">Currency Conversion (Gold per 1k)</h2>
+                <div class="row">
+                    <div class="col-md-4">
+                        <label for="conversion_rate_ap_to_gold" class="form-label">Apple Points (AP)</label>
+                        <input type="number" class="form-control" id="conversion_rate_ap_to_gold">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="conversion_rate_oj_to_gold" class="form-label">Orange Jello (OJ)</label>
+                        <input type="number" class="form-control" id="conversion_rate_oj_to_gold">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="conversion_rate_ac_to_gold" class="form-label">Ancient Coins (AC)</label>
+                        <input type="number" class="form-control" id="conversion_rate_ac_to_gold">
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
-    </form>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <button type="submit" class="btn btn-success">Save All Settings</button>
+                <p id="save-status" class="mt-2 mb-0"></p>
+            </div>
+        </div>
+      </form>
     </div>
     <script type="module" src="/admin.js"></script>
   </body>
