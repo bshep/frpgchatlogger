@@ -12,6 +12,9 @@ const adminUsersTextarea = document.getElementById('admin-users');
 const channelsTextarea = document.getElementById('monitored-channels');
 const schedulerPollingIntervalInput = document.getElementById('scheduler-polling-interval');
 const analysisChunkSizeInput = document.getElementById('analysis-chunk-size');
+const conversionApInput = document.getElementById('conversion_rate_ap_to_gold');
+const conversionOjInput = document.getElementById('conversion_rate_oj_to_gold');
+const conversionAcInput = document.getElementById('conversion_rate_ac_to_gold');
 const saveStatus = document.getElementById('save-status');
 
 // --- Initialization ---
@@ -30,20 +33,17 @@ async function fetchConfig() {
         }
         const configs = await response.json();
         
-        // Find and populate each config value
-        const allowedUsers = configs.find(c => c.key === 'allowed_users')?.value || '';
-        const allowedGuilds = configs.find(c => c.key === 'allowed_guilds')?.value || '';
-        const adminUsers = configs.find(c => c.key === 'admin_users')?.value || '';
-        const channels = configs.find(c => c.key === 'channels_to_track')?.value || '';
-        const pollingInterval = configs.find(c => c.key === 'scheduler_polling_interval')?.value || '5';
-        const analysisChunkSize = configs.find(c => c.key === 'analysis_chunk_size')?.value || '50';
+        const getConfigValue = (key, defaultValue = '') => configs.find(c => c.key === key)?.value || defaultValue;
 
-        allowedUsersTextarea.value = allowedUsers.split(',').join('\n');
-        allowedGuildsTextarea.value = allowedGuilds.split(',').join('\n');
-        adminUsersTextarea.value = adminUsers.split(',').join('\n');
-        channelsTextarea.value = channels.split(',').join('\n');
-        schedulerPollingIntervalInput.value = pollingInterval;
-        analysisChunkSizeInput.value = analysisChunkSize;
+        allowedUsersTextarea.value = getConfigValue('allowed_users').split(',').join('\n');
+        allowedGuildsTextarea.value = getConfigValue('allowed_guilds').split(',').join('\n');
+        adminUsersTextarea.value = getConfigValue('admin_users').split(',').join('\n');
+        channelsTextarea.value = getConfigValue('channels_to_track').split(',').join('\n');
+        schedulerPollingIntervalInput.value = getConfigValue('scheduler_polling_interval', '5');
+        analysisChunkSizeInput.value = getConfigValue('analysis_chunk_size', '50');
+        conversionApInput.value = getConfigValue('conversion_rate_ap_to_gold', '60');
+        conversionOjInput.value = getConfigValue('conversion_rate_oj_to_gold', '10');
+        conversionAcInput.value = getConfigValue('conversion_rate_ac_to_gold', '25');
 
     } catch (error) {
         console.error('Error fetching config:', error);
@@ -63,7 +63,10 @@ async function handleConfigSave(event) {
         { key: 'admin_users', value: adminUsersTextarea.value.split('\n').filter(u => u.trim()).join(',') },
         { key: 'channels_to_track', value: channelsTextarea.value.split('\n').filter(c => c.trim()).join(',') },
         { key: 'scheduler_polling_interval', value: schedulerPollingIntervalInput.value },
-        { key: 'analysis_chunk_size', value: analysisChunkSizeInput.value }
+        { key: 'analysis_chunk_size', value: analysisChunkSizeInput.value },
+        { key: 'conversion_rate_ap_to_gold', value: conversionApInput.value },
+        { key: 'conversion_rate_oj_to_gold', value: conversionOjInput.value },
+        { key: 'conversion_rate_ac_to_gold', value: conversionAcInput.value }
     ];
 
     try {

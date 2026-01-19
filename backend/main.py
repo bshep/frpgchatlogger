@@ -205,7 +205,7 @@ def parse_single_channel_log(db: Session, channel_to_parse: str):
                 continue
 
             timestamp_str = title.find("strong").text if title.find("strong") else None
-            user_anchor = title.find("a", href=re.compile(r"profile\.php\?user_name="))
+            user_anchor = title.find("a", href=re.compile(r"profile.php?user_name="))
             username = user_anchor.text if user_anchor else "System"
 
             if not timestamp_str:
@@ -426,7 +426,6 @@ def deduplicate_messages():
             db.close()
 
 
-
 def run_migrations(l_engine):
     """
     Checks for and creates missing indexes on existing tables.
@@ -489,7 +488,10 @@ def startup_event():
         "allowed_guilds": "",
         "admin_users": "",
         "scheduler_polling_interval": "5",
-        "analysis_chunk_size": "50"
+        "analysis_chunk_size": "50",
+        "conversion_rate_ap_to_gold": "60",
+        "conversion_rate_oj_to_gold": "10",
+        "conversion_rate_ac_to_gold": "25"
     }
     for key, value in defaults.items():
         if not get_config(db, key):
@@ -675,7 +677,11 @@ class ConfigUpdateRequest(BaseModel):
 
 @app.post("/api/config")
 def update_config(request: ConfigUpdateRequest, db: Session = Depends(get_db), admin_user: DiscordUser = Depends(get_admin_user)):
-    allowed_keys = ["allowed_users", "allowed_guilds", "admin_users", "channels_to_track", "scheduler_polling_interval", "analysis_chunk_size"]
+    allowed_keys = [
+        "allowed_users", "allowed_guilds", "admin_users", 
+        "channels_to_track", "scheduler_polling_interval", "analysis_chunk_size",
+        "conversion_rate_ap_to_gold", "conversion_rate_oj_to_gold", "conversion_rate_ac_to_gold"
+    ]
     for config_item in request.configs:
         if config_item.key in allowed_keys:
             set_config(db, config_item.key, config_item.value)
