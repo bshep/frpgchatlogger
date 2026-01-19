@@ -139,7 +139,7 @@ class AuthStatusModel(BaseModel):
     username: str
     is_allowed: bool
     is_admin: bool
-
+    is_analysis_allowed: bool
 
 # --- FastAPI App Setup ---
 app = FastAPI()
@@ -879,10 +879,13 @@ async def get_me(current_user: DiscordUser = Depends(get_current_user), db: Sess
     """
     allowed = is_user_allowed(current_user, db)
     admin = is_user_admin(current_user, db)
+    analysis_allowed = is_user_analysis_allowed(current_user, db)
+    
     return AuthStatusModel(
         username=f"{current_user.username}#{current_user.discriminator}",
         is_allowed=allowed,
-        is_admin=admin
+        is_admin=admin,
+        is_analysis_allowed=analysis_allowed
     )
 
 @app.post("/api/logout")

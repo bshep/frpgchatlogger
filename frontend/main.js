@@ -25,6 +25,7 @@ const AUTH_STATUS_MESSAGE = document.getElementById('auth-status-message');
 const DISCORD_LOGIN_BUTTON = document.getElementById('discord-login-button');
 const DISCORD_LOGOUT_BUTTON = document.getElementById('discord-logout-button');
 const ADMIN_PAGE_LINK = document.getElementById('admin-page-link');
+const ANALYSIS_PAGE_LINK = document.getElementById('analysis-page-link');
 const MARK_ALL_AS_READ_BTN = document.getElementById('mark-all-as-read-btn');
 
 // --- State ---
@@ -33,6 +34,7 @@ let authStatus = {
   loggedIn: false,
   isAllowed: false,
   isAdmin: false,
+  isAnalysisAllowed: false,
   username: ''
 };
 let currentUserConfig = {
@@ -116,15 +118,18 @@ async function checkAuthStatus() {
       authStatus.loggedIn = true;
       authStatus.isAllowed = userData.is_allowed;
       authStatus.isAdmin = userData.is_admin;
+      authStatus.isAnalysisAllowed = userData.is_analysis_allowed;
       authStatus.username = userData.username;
     } else {
       authStatus.loggedIn = false;
       authStatus.isAllowed = false;
+      authStatus.isAnalysisAllowed = false;
     }
   } catch (error) {
     console.error("Auth check failed:", error);
     authStatus.loggedIn = false;
     authStatus.isAllowed = false;
+    authStatus.isAnalysisAllowed = false;
   }
 }
 
@@ -147,12 +152,20 @@ function updateUIForAuth() {
     } else {
       ADMIN_PAGE_LINK.style.display = 'none';
     }
+
+    if (authStatus.isAnalysisAllowed) {
+      ANALYSIS_PAGE_LINK.style.display = 'block';
+    } else {
+      ANALYSIS_PAGE_LINK.style.display = 'none';
+    }
+
   } else {
     AUTH_STATUS_MESSAGE.textContent = 'Not logged in.';
     DISCORD_LOGIN_BUTTON.style.display = 'block';
     DISCORD_LOGOUT_BUTTON.style.display = 'none';
     ADVANCED_SEARCH_TAB.style.display = 'none';
     ADMIN_PAGE_LINK.style.display = 'none';
+    ANALYSIS_PAGE_LINK.style.display = 'none';
   }
 }
 
