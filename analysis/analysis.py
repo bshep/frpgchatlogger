@@ -5,19 +5,26 @@ import json
 import openai
 from bs4 import BeautifulSoup
 import time
+from dotenv import load_dotenv
 
-def get_config_value(key, default=None):
+def get_config_value(db, key, default):
     """Fetches a specific config value from the database."""
-    conn = sqlite3.connect('backend/chatlog.db')
+    if not db:
+        return None
+    
+    conn = sqlite3.connect(db)
     c = conn.cursor()
     c.execute("SELECT value FROM config WHERE key = ?", (key,))
     result = c.fetchone()
     conn.close()
     return result[0] if result else default
 
-def get_messages(start_date=None, end_date=None, channel=None):
+def get_messages(db, start_date=None, end_date=None, channel=None):
     """Fetches all messages from the chatlog.db database based on filters."""
-    conn = sqlite3.connect('backend/chatlog.db')
+    if not db:
+        return []
+    
+    conn = sqlite3.connect(db)
     c = conn.cursor()
     
     query = "SELECT id, timestamp, username, message_html FROM messages"
@@ -73,15 +80,17 @@ def analyze_messages(message_chunk_str):
     Returns:
         dict: The analysis from the LLM.
     """
-    with open('analysis/llm_prompt.txt', 'r', encoding="utf-8") as f:
+    with open('llm_prompt.txt', 'r', encoding="utf-8") as f:
         prompt_template = f.read()
 
     # IMPORTANT: Replace with your actual OpenAI API key, preferably from an environment variable
-    openai.api_key = os.getenv("OPENAI_API_KEY", "OPENAI_API_KEY")
+    load_dotenv('analysis.env')
+    
+    openai.api_key = os.getenv("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
     if openai.api_key == "YOUR_OPENAI_API_KEY":
         print("Warning: OpenAI API key is not set. Please set the OPENAI_API_KEY environment variable.")
         # Return dummy data for development without a key
-        return {"trades": [], "transactions": []}
+        raise Exception("OPENAI_API_KEY Not set")
 
     try:
         response = openai.chat.completions.create(
@@ -100,9 +109,12 @@ def analyze_messages(message_chunk_str):
         # Return empty structure on error
         return {"trades": [], "transactions": []}
 
-def store_analysis(analysis):
+def store_analysis(db, analysis):
     """Stores the aggregated analysis in the chat_analysis.db database."""
-    conn = sqlite3.connect('chat_analysis.db')
+    if not db:
+        return
+    
+    conn = sqlite3.connect('../chat_analysis.db')
     c = conn.cursor()
     
     # Clear existing data
@@ -146,12 +158,11 @@ if __name__ == '__main__':
     parser.add_argument('--start-date', help='Start date for filtering messages (YYYY-MM-DD)')
     parser.add_argument('--end-date', help='End date for filtering messages (YYYY-MM-DD)')
     parser.add_argument('--channel', default="trade", help="The channel to analyze, 'trade' if not provided")
+    parser.add_argument('--db', default="../backend/chatlog.db",help="The path for the db file (Default: ../backend/chatlog.db)")
     args = parser.parse_args()
     
-    os.chdir("..")
-    
     # 1. Fetch all messages
-    all_messages = get_messages(args.start_date, args.end_date, args.channel)
+    all_messages = get_messages(args.db, args.start_date, args.end_date, args.channel)
     
     # 2. Clean and format all messages
     cleaned_messages = []
@@ -163,30 +174,27 @@ if __name__ == '__main__':
 
     # 3. Get chunk size from config
     try:
-        chunk_size = int(get_config_value('analysis_chunk_size', 50))
+        chunk_size = int(get_config_value(args.db, 'analysis_chunk_size', 50))
     except (ValueError, TypeError):
         chunk_size = 50
     print(f"Using chunk size: {chunk_size}")
 
     # 4. Process messages in chunks
     aggregated_analysis = {"trades": [], "transactions": []}
-    
     for i in range(0, len(cleaned_messages), chunk_size):
         chunk = cleaned_messages[i:i + chunk_size]
         message_chunk_str = "\n".join(chunk)
-        
-        print(f"Analyzing chunk {i // chunk_size + 1}/{(len(cleaned_messages) + chunk_size - 1) // chunk_size}...")
+
+        print(f"Analyzing chunk {i // chunk_size + 1}/{(len(cleaned_messages) + chunk_size - 1) // chunk_size}...\r")
         analysis_result = analyze_messages(message_chunk_str)
-        print(f"===========\n{message_chunk_str}\n==========")
+        # print(f"===========\n{message_chunk_str}\n==========")
         if analysis_result.get('trades'):
             aggregated_analysis['trades'].extend(analysis_result['trades'])
         if analysis_result.get('transactions'):
             aggregated_analysis['transactions'].extend(analysis_result['transactions'])
         # Optional: sleep to avoid hitting rate limits
-        if i > chunk_size:
-            break
 
     # 5. Store the final aggregated results
-    store_analysis(aggregated_analysis)
+    store_analysis(args.db, aggregated_analysis)
     
-    print("Analysis complete and stored in chat_analysis.db")
+    print("Analysis complete and stored in chat_analysis.db\n\n")
