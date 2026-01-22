@@ -43,7 +43,8 @@ let currentUserConfig = {
   polling_interval: 5, // in seconds
 };
 let localMentionsCache = [];
-let pollingIntervalId;
+let chatLogPollingIntervalId;
+let mentionPollingIntervalId;
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', initializeApp);
@@ -54,11 +55,13 @@ async function initializeApp() {
   await checkAuthStatus();
   updateUIForAuth();
   
-  // Initial data fetch and polling only if content is visible
+  // Initial data fetch and polling
+  fetchMentions();
+  startMentionPolling();
+
   if (CHANNEL_VIEW.style.display !== 'none') {
     fetchChatLog();
-    fetchMentions();
-    startPolling();
+    startChatLogPolling();
   }
   
   addEventListeners();
@@ -195,7 +198,7 @@ function handleTabClick(e) {
       activeChannel = 'none';
       CHANNEL_VIEW.style.display = 'none';
       ADVANCED_SEARCH_VIEW.style.display = 'block';
-      stopPolling();
+      stopChatLogPolling();
     } else {
       // Switch to a channel view
       CHANNEL_VIEW.style.display = 'block';
@@ -204,7 +207,7 @@ function handleTabClick(e) {
         activeChannel = channel;
         CHAT_SEARCH_BAR.value = '';
         fetchChatLog();
-        restartPolling(); // Restart polling only if it was stopped
+        restartChatLogPolling(); // Restart polling only if it was stopped
       }
     }
   }
@@ -335,7 +338,8 @@ function handleConfigFormSubmit(e) {
     localStorage.removeItem('localMentionsCache');
     fetchMentions();
   }
-  restartPolling();
+  restartChatLogPolling();
+  restartMentionPolling();
 }
 
 // --- Chat Log Display ---
@@ -458,28 +462,42 @@ async function handleMentionsClick(e) {
 }
 
 // --- Polling ---
-function startPolling() {
-  stopPolling();
-  pollingIntervalId = setInterval(() => {
-    fetchChatLog();
-    fetchMentions();
-  }, currentUserConfig.polling_interval * 1000);
-  console.log(`Polling started with interval: ${currentUserConfig.polling_interval} seconds`);
+function startChatLogPolling() {
+  stopChatLogPolling();
+  chatLogPollingIntervalId = setInterval(fetchChatLog, currentUserConfig.polling_interval * 1000);
+  console.log(`Chat log polling started with interval: ${currentUserConfig.polling_interval} seconds`);
 }
 
-function stopPolling() {
-  if (pollingIntervalId) {
-    clearInterval(pollingIntervalId);
-    pollingIntervalId = null;
-    console.log("Polling stopped.");
+function stopChatLogPolling() {
+  if (chatLogPollingIntervalId) {
+    clearInterval(chatLogPollingIntervalId);
+    chatLogPollingIntervalId = null;
+    console.log("Chat log polling stopped.");
   }
 }
 
-function restartPolling() {
-  stopPolling();
-  startPolling();
+function restartChatLogPolling() {
+  stopChatLogPolling();
+  startChatLogPolling();
+}
+
+function startMentionPolling() {
+  stopMentionPolling();
+  mentionPollingIntervalId = setInterval(fetchMentions, currentUserConfig.polling_interval * 1000);
+  console.log(`Mention polling started with interval: ${currentUserConfig.polling_interval} seconds`);
+}
+
+function stopMentionPolling() {
+  if (mentionPollingIntervalId) {
+    clearInterval(mentionPollingIntervalId);
+    mentionPollingIntervalId = null;
+    console.log("Mention polling stopped.");
+  }
+}
+
+function restartMentionPolling() {
+  stopMentionPolling();
+  startMentionPolling();
 }
 
 // Initial fetch when script loads
-fetchChatLog();
-fetchMentions();
