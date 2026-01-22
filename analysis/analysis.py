@@ -110,22 +110,22 @@ def analyze_messages(message_chunk_str):
         return {"trades": [], "transactions": []}
 
 def store_analysis(db, analysis):
-    """Stores the aggregated analysis in the chat_analysis.db database."""
+    """
+    Stores the aggregated analysis in the chat_analysis.db database.
+    It adds new entries if they don't already exist, rather than clearing the table.
+    """
     if not db:
         return
     
     conn = sqlite3.connect('../chat_analysis.db')
     c = conn.cursor()
     
-    # Clear existing data
-    c.execute('DROP TABLE IF EXISTS trades')
-    c.execute('DROP TABLE IF EXISTS transactions')
-    
+    # Create tables if they don't exist
     c.execute('''
-        CREATE TABLE trades (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, sender TEXT, item TEXT, quantity INTEGER, price TEXT, timestamp TEXT)
+        CREATE TABLE IF NOT EXISTS trades (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, sender TEXT, item TEXT, quantity INTEGER, price TEXT, timestamp TEXT)
     ''')
     c.execute('''
-        CREATE TABLE transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, seller TEXT, buyer TEXT, item TEXT, quantity INTEGER, price TEXT, timestamp TEXT)
+        CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, seller TEXT, buyer TEXT, item TEXT, quantity INTEGER, price TEXT, timestamp TEXT)
     ''')
     
     # Process trades
@@ -133,22 +133,36 @@ def store_analysis(db, analysis):
         items = trade.get('item')
         if isinstance(items, list):
             for item_name in items:
-                c.execute("INSERT INTO trades (type, sender, item, quantity, price, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                # Check for existing trade to avoid duplicates
+                c.execute("SELECT id FROM trades WHERE type = ? AND sender = ? AND item = ? AND quantity = ? AND price = ? AND timestamp = ?",
                           (trade.get('type'), trade.get('sender'), item_name, trade.get('quantity'), trade.get('price'), trade.get('timestamp')))
+                if c.fetchone() is None:
+                    c.execute("INSERT INTO trades (type, sender, item, quantity, price, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                              (trade.get('type'), trade.get('sender'), item_name, trade.get('quantity'), trade.get('price'), trade.get('timestamp')))
         else: # item is a single string or None
-            c.execute("INSERT INTO trades (type, sender, item, quantity, price, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            c.execute("SELECT id FROM trades WHERE type = ? AND sender = ? AND item = ? AND quantity = ? AND price = ? AND timestamp = ?",
                       (trade.get('type'), trade.get('sender'), items, trade.get('quantity'), trade.get('price'), trade.get('timestamp')))
+            if c.fetchone() is None:
+                c.execute("INSERT INTO trades (type, sender, item, quantity, price, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                          (trade.get('type'), trade.get('sender'), items, trade.get('quantity'), trade.get('price'), trade.get('timestamp')))
 
     # Process transactions
     for transaction in analysis.get('transactions', []):
         items = transaction.get('item')
         if isinstance(items, list):
             for item_name in items:
-                c.execute("INSERT INTO transactions (seller, buyer, item, quantity, price, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                # Check for existing transaction to avoid duplicates
+                c.execute("SELECT id FROM transactions WHERE seller = ? AND buyer = ? AND item = ? AND quantity = ? AND price = ? AND timestamp = ?",
                           (transaction.get('seller'), transaction.get('buyer'), item_name, transaction.get('quantity'), transaction.get('price'), transaction.get('timestamp')))
+                if c.fetchone() is None:
+                    c.execute("INSERT INTO transactions (seller, buyer, item, quantity, price, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                              (transaction.get('seller'), transaction.get('buyer'), item_name, transaction.get('quantity'), transaction.get('price'), transaction.get('timestamp')))
         else: # item is a single string or None
-            c.execute("INSERT INTO transactions (seller, buyer, item, quantity, price, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            c.execute("SELECT id FROM transactions WHERE seller = ? AND buyer = ? AND item = ? AND quantity = ? AND price = ? AND timestamp = ?",
                       (transaction.get('seller'), transaction.get('buyer'), items, transaction.get('quantity'), transaction.get('price'), transaction.get('timestamp')))
+            if c.fetchone() is None:
+                c.execute("INSERT INTO transactions (seller, buyer, item, quantity, price, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                          (transaction.get('seller'), transaction.get('buyer'), items, transaction.get('quantity'), transaction.get('price'), transaction.get('timestamp')))
         
     conn.commit()
     conn.close()

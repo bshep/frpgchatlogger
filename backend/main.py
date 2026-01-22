@@ -718,6 +718,32 @@ def update_config(request: ConfigUpdateRequest, db: Session = Depends(get_db), a
             set_config(db, config_item.key, config_item.value)
     return {"message": "Configuration updated successfully."}
 
+@app.get("/api/chat-mods", response_model=List[str])
+async def get_chat_mods(analysis_user: DiscordUser = Depends(get_analysis_user)):
+    """
+    Retrieves the list of chat moderators from the database.
+    """
+    try:
+        # The database is in the same directory as this script.
+        conn = sqlite3.connect(DATABASE_URL.replace("sqlite:///", ""))
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Fetch usernames from chat_mods table
+        try:
+            c.execute("SELECT username FROM chat_mods ORDER BY username ASC")
+            mods = [row['username'] for row in c.fetchall()]
+        except sqlite3.OperationalError:
+            # This will happen if the table doesn't exist yet
+            mods = []
+
+        conn.close()
+        return mods
+
+    except Exception as e:
+        print(f"An unexpected error occurred while fetching chat mods: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
 # --- Analysis Endpoints ---
 @app.get("/analysis.html")
 async def get_analysis_page(current_user: DiscordUser = Depends(get_analysis_user)):

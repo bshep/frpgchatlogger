@@ -18,15 +18,42 @@ const conversionApInput = document.getElementById('conversion_rate_ap_to_gold');
 const conversionOjInput = document.getElementById('conversion_rate_oj_to_gold');
 const conversionAcInput = document.getElementById('conversion_rate_ac_to_gold');
 const saveStatus = document.getElementById('save-status');
+const chatModsList = document.getElementById('chat-mods-list');
+
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', initializeAdminPage);
 
 function initializeAdminPage() {
     fetchConfig();
+    fetchChatMods(); // Add this call
     configForm.addEventListener('submit', handleConfigSave);
 }
 
+async function fetchChatMods() {
+    try {
+        const response = await fetch(`${BACKEND_URL}/api/chat-mods`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch chat mods list.');
+        }
+        const mods = await response.json();
+        
+        chatModsList.innerHTML = ''; // Clear current list
+        if (mods.length > 0) {
+            mods.forEach(mod => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item';
+                li.textContent = mod;
+                chatModsList.appendChild(li);
+            });
+        } else {
+            chatModsList.innerHTML = '<li class="list-group-item">No mods found or script has not run.</li>';
+        }
+    } catch (error) {
+        console.error('Error fetching chat mods:', error);
+        chatModsList.innerHTML = `<li class="list-group-item text-danger">Error loading list.</li>`;
+    }
+}
 async function fetchConfig() {
     try {
         const response = await fetch(`${BACKEND_URL}/api/config`);
