@@ -70,6 +70,49 @@ def cleanup_message(messsage_html) -> str:
 
     return message_soup.get_text()
 
+def parse_price_and_quantity(price_str, quantity_int):
+    """
+    Parses a price string and quantity using an LLM to extract total value and confirmed quantity.
+    Returns (parsed_total_value, parsed_quantity) or (None, None) if parsing fails.
+    """
+    load_dotenv('analysis.env')
+    openai.api_key = os.getenv("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
+    if openai.api_key == "YOUR_OPENAI_API_KEY":
+        print("Warning: OpenAI API key is not set. Please set the OPENAI_API_KEY environment variable.")
+        return None, None
+
+    with open('llm_prompt_parse_transaction.txt', 'r', encoding="utf-8") as f:
+        prompt_template = f.read()
+
+    user_content = f"Price: \"{price_str}\"\nQuantity: {quantity_int}"
+
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4.1-mini", # Use gpt-4 for robust parsing
+            messages=[
+                {"role": "system", "content": prompt_template},
+                {"role": "user", "content": user_content}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0 # For deterministic parsing
+        )
+        
+        llm_response = json.loads(response.choices[0].message.content)
+        
+        parsed_total_value = llm_response.get('parsed_total_value')
+        parsed_quantity = llm_response.get('parsed_quantity')
+
+        # Validate types and values
+        if isinstance(parsed_total_value, (int, float)) and isinstance(parsed_quantity, int) and parsed_quantity > 0:
+            return float(parsed_total_value), parsed_quantity
+        else:
+            # print(f"LLM returned invalid parse for Price: '{price_str}', Quantity: {quantity_int}. Response: {llm_response}")
+            return None, None
+            
+    except Exception as e:
+        print(f"Error calling LLM for price parsing (Price: '{price_str}', Quantity: {quantity_int}): {e}")
+        return None, None
+
 def analyze_messages(message_chunk_str):
     """
     Analyzes a chunk of pre-formatted messages using an LLM.
@@ -167,28 +210,50 @@ def store_analysis(db, analysis):
     conn.commit()
     conn.close()
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Analyze chat logs.')
-    parser.add_argument('--start-date', help='Start date for filtering messages (YYYY-MM-DD)')
-    parser.add_argument('--end-date', help='End date for filtering messages (YYYY-MM-DD)')
-    parser.add_argument('--channel', default="trade", help="The channel to analyze, 'trade' if not provided")
-    parser.add_argument('--db', default="../backend/chatlog.db",help="The path for the db file (Default: ../backend/chatlog.db)")
-    args = parser.parse_args()
+def migrate_schema(db_path):
+    """
+    Migrates the schema of chat_analysis.db to ensure all necessary columns exist.
+    """
+    print("--- Running Schema Migration ---")
+    conn = sqlite3.connect('../chat_analysis.db')
+    c = conn.cursor()
+
+    # Add normalized_price to trades table if it doesn't exist
+    c.execute("PRAGMA table_info(trades)")
+    columns = [col[1] for col in c.fetchall()]
+    if 'normalized_price' not in columns:
+        c.execute("ALTER TABLE trades ADD COLUMN normalized_price REAL")
+        print("Added 'normalized_price' column to 'trades' table.")
+    
+    # Add normalized_price to transactions table if it doesn't exist
+    c.execute("PRAGMA table_info(transactions)")
+    columns = [col[1] for col in c.fetchall()]
+    if 'normalized_price' not in columns:
+        c.execute("ALTER TABLE transactions ADD COLUMN normalized_price REAL")
+        print("Added 'normalized_price' column to 'transactions' table.")
+    
+    conn.commit()
+    conn.close()
+    print("--- Schema Migration Complete ---")
+
+def run_stage_1(db_path, start_date, end_date, channel):
+    """
+    Stage 1: Extracts trade offers and completed transactions from raw chat messages.
+    """
+    print("--- Running Stage 1: Trade and Transaction Extraction ---")
     
     # 1. Fetch all messages
-    all_messages = get_messages(args.db, args.start_date, args.end_date, args.channel)
+    all_messages = get_messages(db_path, start_date, end_date, channel)
     
     # 2. Clean and format all messages
     cleaned_messages = []
     for msg in all_messages:
-        # This simplified cleaning preserves the ((item)) format if it exists
         cleaned_text = cleanup_message(msg[3]).replace(msg[2] + ": ","")
-        # Format: "- username (timestamp): message"
         cleaned_messages.append(f"- {msg[2]} ({msg[1].replace('.000000', '')}): {cleaned_text}")
 
     # 3. Get chunk size from config
     try:
-        chunk_size = int(get_config_value(args.db, 'analysis_chunk_size', 50))
+        chunk_size = int(get_config_value(db_path, 'analysis_chunk_size', 50))
     except (ValueError, TypeError):
         chunk_size = 50
     print(f"Using chunk size: {chunk_size}")
@@ -201,14 +266,123 @@ if __name__ == '__main__':
 
         print(f"Analyzing chunk {i // chunk_size + 1}/{(len(cleaned_messages) + chunk_size - 1) // chunk_size}...\r")
         analysis_result = analyze_messages(message_chunk_str)
-        # print(f"===========\n{message_chunk_str}\n==========")
         if analysis_result.get('trades'):
             aggregated_analysis['trades'].extend(analysis_result['trades'])
         if analysis_result.get('transactions'):
             aggregated_analysis['transactions'].extend(analysis_result['transactions'])
-        # Optional: sleep to avoid hitting rate limits
-
-    # 5. Store the final aggregated results
-    store_analysis(args.db, aggregated_analysis)
     
-    print("Analysis complete and stored in chat_analysis.db\n\n")
+    # 5. Store the final aggregated results
+    store_analysis(db_path, aggregated_analysis)
+    
+    print("--- Stage 1 Complete ---")
+
+def run_stage_2(db_path):
+    """
+    Stage 2: Calculates the average price for a set of base items using LLM-parsed transaction data
+    and stores it.
+    """
+    print("\n--- Running Stage 2: Average Price Calculation ---")
+    migrate_schema(db_path) # Ensure schema is up-to-date
+
+    conn = sqlite3.connect('../chat_analysis.db')
+    c = conn.cursor()
+
+    # Create a table to store the average prices of base items
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS item_average_prices (
+            item_name TEXT PRIMARY KEY,
+            average_price REAL
+        )
+    ''')
+
+    base_items = ['Arnold Palmer', 'Orange Juice', 'Apple Cider', 'Large Net']
+
+    for item_name in base_items:
+        c.execute("SELECT quantity, price FROM transactions WHERE item = ?", (item_name,))
+        raw_transactions = c.fetchall()
+        
+        total_sum_values = 0
+        total_sum_quantities = 0
+        valid_transaction_count = 0
+
+        print(f"Processing transactions for '{item_name}'...")
+        for raw_quantity, raw_price in raw_transactions:
+            parsed_total_value, parsed_quantity = parse_price_and_quantity(raw_price, raw_quantity)
+            # print(f"- Text {raw_quantity}/{raw_price} -> {parsed_quantity}/{parsed_total_value}")
+            
+            if parsed_total_value is not None and parsed_quantity is not None and parsed_quantity > 100:
+                total_sum_values += parsed_total_value
+                total_sum_quantities += parsed_quantity
+                valid_transaction_count += 1
+            else:
+                # print(f"  Skipping invalid transaction: Price='{raw_price}', Quantity='{raw_quantity}'")
+                pass
+
+        average_price = 0
+        if total_sum_quantities > 0:
+            average_price = total_sum_values / (total_sum_quantities/1000)
+            c.execute("INSERT OR REPLACE INTO item_average_prices (item_name, average_price) VALUES (?, ?)", (item_name, average_price))
+            print(f"Average price for '{item_name}' (from {valid_transaction_count} valid transactions): {average_price:.2f}")
+            # break
+        else:
+            print(f"No valid transactions found for '{item_name}' after parsing, or total quantity is zero. Average price set to 0.")
+            # Ensure an entry exists even if average is 0
+            c.execute("INSERT OR REPLACE INTO item_average_prices (item_name, average_price) VALUES (?, ?)", (item_name, 0.0))
+
+    conn.commit()
+    conn.close()
+    print("--- Stage 2 Complete ---")
+
+def run_stage_3(db_path):
+    """
+    Stage 3: Normalizes prices in the trades and transactions tables based on the
+    average prices calculated in Stage 2.
+    """
+    print("\n--- Running Stage 3: Price Normalization ---")
+    print("This stage will normalize prices based on the data from Stage 2.")
+    
+    conn = sqlite3.connect('../chat_analysis.db')
+    c = conn.cursor()
+
+    # Get the base price for normalization (e.g., from a specific item)
+    c.execute("SELECT average_price FROM item_average_prices WHERE item_name = 'Arnold Palmer'")
+    base_price_row = c.fetchone()
+    if not base_price_row:
+        print("Base price from 'Arnold Palmer' not found. Cannot run Stage 3.")
+        conn.close()
+        return
+
+    base_price = base_price_row[0]
+    print(f"Using base price for normalization: {base_price:.2f}")
+
+    # TODO:
+    # 1. Iterate through all 'trades' and 'transactions'.
+    # 2. For each record, parse the 'price' column using the same logic as Stage 2.
+    # 3. Calculate the price per item (price / quantity).
+    # 4. Calculate the 'normalized_price' by dividing the price per item by the 'base_price'.
+    #    normalized_price = (price / quantity) / base_price
+    # 5. Update the 'normalized_price' column for that record.
+
+    conn.close()
+    print("--- Stage 3 Complete ---")
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Analyze chat logs in stages.')
+    parser.add_argument('--start-date', help='Start date for filtering messages (YYYY-MM-DD) for Stage 1.')
+    parser.add_argument('--end-date', help='End date for filtering messages (YYYY-MM-DD) for Stage 1.')
+    parser.add_argument('--channel', default="trade", help="The channel to analyze for Stage 1, 'trade' if not provided.")
+    parser.add_argument('--db', default="../backend/chatlog.db", help="The path for the db file (Default: ../backend/chatlog.db)")
+    parser.add_argument('--stage', default='all', choices=['1', '2', '3', 'all'], help="Which analysis stage to run.")
+    
+    args = parser.parse_args()
+    
+    if args.stage == '1' or args.stage == 'all':
+        run_stage_1(args.db, args.start_date, args.end_date, args.channel)
+    
+    if args.stage == '2' or args.stage == 'all':
+        run_stage_2(args.db)
+        
+    if args.stage == '3' or args.stage == 'all':
+        run_stage_3(args.db)
+        
+    print("\nAnalysis pipeline finished.")
