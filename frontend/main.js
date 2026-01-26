@@ -68,6 +68,50 @@ async function initializeApp() {
   setupAudioUnlock();
 }
 
+function handleMessageContentClick(event) {
+  let target = event.target;
+
+  if (!target.dataset.action) {
+    target = target.closest('span');
+  }
+
+  if (target.dataset.action === 'user-link' || target.dataset.action === "item-link") {
+    if (!event.shiftKey && !event.altKey ) {
+      // Perform search
+      event.preventDefault();
+
+      const searchTerm = target.dataset.searchTerm;
+
+      const advancedSearchTab = document.querySelector('[data-channel="advanced-search"]');
+      if (advancedSearchTab) {
+        advancedSearchTab.click();
+      }
+      
+      ADVANCED_SEARCH_INPUT.value = searchTerm;
+      if (ADVANCED_SEARCH_FORM.requestSubmit) {
+        ADVANCED_SEARCH_FORM.requestSubmit();
+      } else {
+        ADVANCED_SEARCH_FORM.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      }
+    } else if (event.altKey) {
+      event.preventDefault();
+
+      let searchTerm = target.dataset.searchTerm;
+      if (target.dataset.action === 'user-link') {
+        searchTerm = "@" + searchTerm + ":";
+      } else if (target.dataset.action === 'item-link') {
+        searchTerm = "((" + searchTerm + "))";
+      }
+
+      navigator.clipboard.writeText(searchTerm);
+    } else {
+      // Open profile in new tab
+      event.preventDefault();
+      window.open(target.dataset.pageUrl, '_blank', 'noopener,noreferrer');
+    }
+  }
+}
+
 function addEventListeners() {
   CHAT_SEARCH_BAR.addEventListener('input', applyChatFilter);
   CHANNEL_TABS.addEventListener('click', handleTabClick);
@@ -76,6 +120,11 @@ function addEventListeners() {
   DISCORD_LOGOUT_BUTTON.addEventListener('click', logout);
   MENTIONS_LOG_ELEMENT.addEventListener('click', handleMentionsClick);
   MARK_ALL_AS_READ_BTN.addEventListener('click', markAllAsRead);
+
+  // Add the new listener for user links
+  CHAT_LOG_ELEMENT.addEventListener('click', handleMessageContentClick);
+  ADVANCED_SEARCH_RESULTS.addEventListener('click', handleMessageContentClick);
+  MENTIONS_LOG_ELEMENT.addEventListener('click', handleMessageContentClick);
 }
 
 function markAllAsRead() {
@@ -243,6 +292,40 @@ async function handleAdvancedSearch(e) {
   }
 }
 // --- Generic Message Renderer ---
+function enhanceLinks(element) {
+  element.querySelectorAll('a').forEach(link => {
+    const originalHref = link.href;
+
+    const span = document.createElement('span');
+    span.textContent = link.textContent;
+    span.className = link.className;
+    
+    // Add data attributes for the event handler
+    span.style.cursor = "pointer";
+
+    if (originalHref.includes('item.php')) {
+      span.dataset.action = 'item-link';
+      span.dataset.pageUrl = originalHref.replace('item.php', 'index.php#!/item.php');
+      span.dataset.searchTerm = link.textContent.trim();
+      link.childNodes.forEach( child => {
+        if (child.tagName === 'IMG') {
+          span.dataset.searchTerm = child.alt;
+        }
+        span.appendChild(child);
+      });
+    } else if (originalHref.includes('profile.php')) {
+      span.dataset.action = 'user-link';
+      span.dataset.pageUrl = originalHref.replace('profile.php', 'index.php#!/profile.php');
+      span.dataset.searchTerm = link.textContent.trim();
+      if (span.dataset.searchTerm.startsWith("@")) {
+        span.dataset.searchTerm = span.dataset.searchTerm.replace('@','')
+        span.style.color = "teal";
+      }
+    }
+    link.parentNode.replaceChild(span, link);
+  });
+}
+// --- Generic Message Renderer ---
 function renderMessages(element, messages) {
   element.innerHTML = '';
   const selectedTab = document.getElementById('channel-tabs').getElementsByClassName("active")[0].dataset.channel || 'trade';
@@ -252,23 +335,13 @@ function renderMessages(element, messages) {
     const timestamp = new Date(msg.timestamp+"-06:00").toLocaleString(undefined, { timeZone: 'America/Chicago' });
     const channelInfo = selectedTab === 'advanced-search' ? `<small class="channel">(${msg.channel})</small>` : '';
 
-    // Fix item links to open in new tab and to point to correct URL
+    // Create a temporary div to manipulate message HTML
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = msg.message_html;
-    tempDiv.querySelectorAll('a').forEach(link => {
-      if (link.href.includes('item.php')) {
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.href = link.href.replace('item.php', 'index.php#!/item.php');
-      }
 
-      if (link.href.includes('profile.php')) {
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.href = link.href.replace('profile.php', 'index.php#!/profile.php');
-      }
-
-    });
+    // Enhance links within the message content
+    enhanceLinks(tempDiv);
+    
     msg.message_html = tempDiv.innerHTML;
 
     messageElement.innerHTML = `
