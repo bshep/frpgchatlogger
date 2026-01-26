@@ -70,6 +70,53 @@ def cleanup_message(messsage_html) -> str:
 
     return message_soup.get_text()
 
+def extract_transaction_details_with_llm(price_str, quantity_int, item_name, transaction_id=None):
+    """
+    Parses a price string, quantity, and item name using an LLM to extract
+    price value, currency, and confirmed quantity for Stage 3 normalization.
+    Returns (parsed_quantity, parsed_price_value, parsed_price_currency) or (None, None, None) if parsing fails.
+    """
+    load_dotenv('analysis.env')
+    openai.api_key = os.getenv("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
+    if openai.api_key == "YOUR_OPENAI_API_KEY":
+        print(f"Warning: OpenAI API key is not set. Please set the OPENAI_API_KEY environment variable. (Transaction ID: {transaction_id})")
+        return None, None, None
+
+    with open('llm_prompt_stage3_parse_transaction.txt', 'r', encoding="utf-8") as f:
+        prompt_template = f.read()
+
+    user_content = f"Item: {item_name}\nPrice: \"{price_str}\"\nQuantity: {quantity_int}"
+
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4.1-mini", # Use gpt-4 for robust parsing in Stage 3
+            messages=[
+                {"role": "system", "content": prompt_template},
+                {"role": "user", "content": user_content}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0 # For deterministic parsing
+        )
+        
+        llm_response = json.loads(response.choices[0].message.content)
+        
+        parsed_quantity = llm_response.get('quantity')
+        parsed_price_value = llm_response.get('price_value')
+        parsed_price_currency = llm_response.get('price_currency')
+
+        # Validate types and values
+        if (isinstance(parsed_quantity, int) and parsed_quantity > 0 and
+            isinstance(parsed_price_value, (int, float)) and
+            isinstance(parsed_price_currency, str)):
+            return parsed_quantity, float(parsed_price_value), parsed_price_currency
+        else:
+            print(f"LLM returned invalid parse for Transaction ID: {transaction_id}, Item: '{item_name}', Price: '{price_str}', Quantity: {quantity_int}. Response: {llm_response}")
+            return None, None, None
+            
+    except Exception as e:
+        print(f"Error calling LLM for price parsing (Transaction ID: {transaction_id}, Item: '{item_name}', Price: '{price_str}', Quantity: {quantity_int}): {e}")
+        return None, None, None
+
 def parse_price_and_quantity(price_str, quantity_int):
     """
     Parses a price string and quantity using an LLM to extract total value and confirmed quantity.
@@ -344,25 +391,72 @@ def run_stage_3(db_path):
     conn = sqlite3.connect('../chat_analysis.db')
     c = conn.cursor()
 
-    # Get the base price for normalization (e.g., from a specific item)
-    c.execute("SELECT average_price FROM item_average_prices WHERE item_name = 'Arnold Palmer'")
-    base_price_row = c.fetchone()
-    if not base_price_row:
-        print("Base price from 'Arnold Palmer' not found. Cannot run Stage 3.")
+    # Fetch average prices for base items from Stage 2
+    c.execute("SELECT item_name, average_price FROM item_average_prices")
+    average_prices_map = {row[0]: row[1] for row in c.fetchall()}
+
+    if not average_prices_map:
+        print("No average prices found from Stage 2. Please run Stage 2 first.")
         conn.close()
         return
 
-    base_price = base_price_row[0]
-    print(f"Using base price for normalization: {base_price:.2f}")
+    # base_price_for_normalization = average_prices_map.get(base_item_for_normalization)
 
-    # TODO:
-    # 1. Iterate through all 'trades' and 'transactions'.
-    # 2. For each record, parse the 'price' column using the same logic as Stage 2.
-    # 3. Calculate the price per item (price / quantity).
-    # 4. Calculate the 'normalized_price' by dividing the price per item by the 'base_price'.
-    #    normalized_price = (price / quantity) / base_price
-    # 5. Update the 'normalized_price' column for that record.
+    # Define currency conversion rates relative to a common unit (e.g., 'gold')
+    # These would ideally be dynamic or configurable, but hardcoding for now.
+    currency_conversion_to_gold = {
+        'gold': 1.0,
+        'arnold palmer': average_prices_map.get("Arnold Palmer"),
+        'orange juice': average_prices_map.get("Orange Juice"),
+        'apple cider': average_prices_map.get("Apple Cider"),
+        'large net': average_prices_map.get("Large Net")
+    }
 
+    print(currency_conversion_to_gold)
+    # Process transactions
+    print("Normalizing transactions...")
+    c.execute("SELECT id, item, quantity, price FROM transactions WHERE price ")
+    transactions_to_normalize = c.fetchall()
+
+    base_items = ['Arnold Palmer', 'Orange Juice', 'Apple Cider', 'Large Net']
+
+    count = 0
+    for trans_id, item, raw_quantity, raw_price in transactions_to_normalize:
+        print(f"  Transaction {trans_id}:")
+        print(f" - RawQ = {raw_quantity}, RawP = {raw_price}")
+        if item in base_items:
+            normalized_price = average_prices_map.get(item)
+        else:
+            parsed_quantity, price_value, price_currency = extract_transaction_details_with_llm(raw_price, raw_quantity, item, trans_id)
+            print(f" - ParQ = {parsed_quantity}, ParV = {price_value}, ParC = {price_currency}")
+
+            normalized_price = None
+            if parsed_quantity is not None and price_value is not None and price_currency is not None:
+                # Convert the price_value to a common unit (e.g., 'gold')
+                conversion_factor = currency_conversion_to_gold.get(price_currency.lower(), 1.0) # Default to 1 if currency unknown
+                print(f" - Conversion Factor = {conversion_factor}")
+                price_in_gold_units = price_value * 1/conversion_factor
+                
+                # Calculate price per item in gold units
+                normalized_price = price_in_gold_units / (parsed_quantity/1000)
+
+        if normalized_price is not None:
+            c.execute("UPDATE transactions SET normalized_price = ? WHERE id = ?", (normalized_price, trans_id))
+            print(f"Normalized Price = {normalized_price:.4f}")
+        else:
+            print(f"  Could not normalize transaction {trans_id}: Item='{item}', Price='{raw_price}', Quantity='{raw_quantity}'")
+            # Optionally set to NULL or 0 if normalization fails
+            c.execute("UPDATE transactions SET normalized_price = NULL WHERE id = ?", (trans_id,))
+            count -=1
+
+        count += 1
+        if count> 5:
+            break        
+    # For now, it just updates normalized_price to NULL for trades
+    c.execute("UPDATE trades SET normalized_price = NULL WHERE normalized_price IS NULL")
+
+
+    conn.commit()
     conn.close()
     print("--- Stage 3 Complete ---")
 
