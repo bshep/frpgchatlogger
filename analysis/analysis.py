@@ -317,6 +317,8 @@ def run_stage_1(db_path, start_date, end_date, channel):
             aggregated_analysis['trades'].extend(analysis_result['trades'])
         if analysis_result.get('transactions'):
             aggregated_analysis['transactions'].extend(analysis_result['transactions'])
+        print(analysis_result.get('transactions'))
+        return
     
     # 5. Store the final aggregated results
     store_analysis(db_path, aggregated_analysis)
