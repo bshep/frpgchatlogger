@@ -75,6 +75,10 @@ function handleMessageContentClick(event) {
     target = target.closest('span');
   }
 
+  if ( !target || !target.dataset.action ) {
+    return; // Not a link we care about
+  }
+
   if (target.dataset.action === 'user-link' || target.dataset.action === "item-link") {
     if (!event.shiftKey && !event.altKey ) {
       // Perform search
