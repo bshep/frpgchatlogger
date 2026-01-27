@@ -134,15 +134,15 @@ def main():
 
     scheduler = BackgroundScheduler()
     # Add jobs
-    # scheduler.add_job(scheduled_log_parsing, 'interval', seconds=polling_interval, max_instances=1, id="log_parsing")
+    scheduler.add_job(scheduled_log_parsing, 'interval', seconds=polling_interval, max_instances=1, id="log_parsing")
     scheduler.add_job(scheduled_mailbox_polling, 'interval', minutes=1, max_instances=1, id="mailbox_polling")
-    # scheduler.add_job(archive_old_messages, 'interval', hours=1, max_instances=1, id="archive_messages")
-    # scheduler.add_job(cleanup_expired_persistent_sessions, 'interval', hours=1, max_instances=1, id="cleanup_sessions")
+    scheduler.add_job(archive_old_messages, 'interval', hours=1, max_instances=1, id="archive_messages")
+    scheduler.add_job(cleanup_expired_persistent_sessions, 'interval', hours=1, max_instances=1, id="cleanup_sessions")
     # scheduler.add_job(deduplicate_messages, 'interval', seconds=60, max_instances=1, id="deduplicate_messages")
-    # scheduler.add_job(check_for_config_changes, 'interval', minutes=1, args=[scheduler], id="config_checker")
+    scheduler.add_job(check_for_config_changes, 'interval', minutes=1, args=[scheduler], id="config_checker")
 
     # Schedule to run once immediately
-    # scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1), id="immediate_log_parsing")
+    scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1), id="immediate_log_parsing")
     scheduler.add_job(scheduled_mailbox_polling, 'date', run_date=datetime.now() + timedelta(seconds=2), id="immediate_mailbox_polling")
 
     scheduler.start()
