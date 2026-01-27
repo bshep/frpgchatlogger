@@ -60,13 +60,32 @@ def get_user_mailbox_preferences(
     return {"usernames": [p.username for p in preferences]}
 
 
-@router.get("/api/mailbox-status", summary="Get latest stored Mailbox Status for all relevant users")
-def get_all_mailbox_statuses(db: Session = Depends(get_mailbox_db)):
+@router.get("/api/mailbox-status", summary="Get latest stored Mailbox Status for the current user's monitored users")
+def get_all_mailbox_statuses(
+    current_user: DiscordUser = Depends(get_current_user), # Add dependency
+    db: Session = Depends(get_mailbox_db)
+):
     """
-    Retrieves the latest mailbox status for all unique users that ANY site user is monitoring from the database.
+    Retrieves the latest mailbox status for all users monitored by the authenticated Discord user from the database.
     The data is updated by the background scheduler.
     """
-    statuses = db.query(MailboxStatus).all()
+    discord_user_id = current_user.id
+
+    # Get usernames monitored by the current user
+    monitored_usernames = db.query(UserMonitoringPreference.username).filter(
+        UserMonitoringPreference.discord_user_id == discord_user_id
+    ).all()
+    
+    # Extract usernames from the query result
+    usernames_list = [u.username for u in monitored_usernames]
+
+    if not usernames_list:
+        return {} # Return empty if no users are being monitored by the current user
+
+    # Filter MailboxStatus by the list of monitored usernames
+    statuses = db.query(MailboxStatus).filter(
+        MailboxStatus.username.in_(usernames_list)
+    ).all()
     
     # Return a dictionary keyed by username for easy lookup on the frontend
     return {status.username: {
