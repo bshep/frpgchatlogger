@@ -107,7 +107,11 @@ function handleMessageContentClick(event) {
         searchTerm = "((" + searchTerm + "))";
       }
 
-      navigator.clipboard.writeText(searchTerm);
+      if (navigator.clipboard === undefined) {
+        unsecuredCopyToClipboard(searchTerm);
+      } else {
+        navigator.clipboard.writeText(searchTerm);
+      }
     } else {
       // Open profile in new tab
       event.preventDefault();
@@ -115,6 +119,34 @@ function handleMessageContentClick(event) {
     }
   }
 }
+
+function unsecuredCopyToClipboard(text) {
+  // Create a temporary, offscreen textarea element
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+
+  // Make the textarea invisible and append it to the document body
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-999999px';
+  textArea.style.top = '-999999px';
+  document.body.appendChild(textArea);
+
+  // Select the text in the textarea and execute the copy command
+  textArea.focus();
+  textArea.select();
+
+  try {
+    const successful = document.execCommand('copy');
+    const msg = successful ? 'successful' : 'unsuccessful';
+    console.log('Copying text command was ' + msg);
+  } catch (err) {
+    console.error('Oops, unable to copy', err);
+  }
+
+  // Remove the temporary textarea
+  document.body.removeChild(textArea);
+}
+
 
 function addEventListeners() {
   CHAT_SEARCH_BAR.addEventListener('input', applyChatFilter);
