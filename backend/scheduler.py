@@ -17,7 +17,7 @@ from main import (
     run_migrations
 )
 from mailbox_db import SessionLocal as MailboxSessionLocal, UserMonitoringPreference, MailboxStatus
-from farmrpg_poller import poll_user_mailbox
+from farmrpg_poller import poll_user_mailbox, MailboxStatusEnum
 import mailbox_db
 
 
@@ -67,20 +67,27 @@ def scheduled_mailbox_polling():
             loop.close()
 
         for res in results:
-            print(res)
-            if res.get("status") != "error":
-                status_entry = db.query(MailboxStatus).filter(MailboxStatus.username == res["username"]).first()
-                if not status_entry:
-                    status_entry = MailboxStatus(username=res["username"])
-                    db.add(status_entry)
-                
-                status_entry.status = res["status"]
-                status_entry.current_items = res["current_items"]
-                status_entry.max_items = res["max_items"]
-                status_entry.fill_ratio = res["fill_ratio"]
-                status_entry.last_updated = datetime.utcnow()
+            # print(res) # Keeping this for debugging during development, might remove later
+            status_entry = db.query(MailboxStatus).filter(MailboxStatus.username == res["username"]).first()
+            if not status_entry:
+                status_entry = MailboxStatus(username=res["username"])
+                db.add(status_entry)
+            
+            status_entry.status = res["status"].value if hasattr(res["status"], 'value') else res["status"] # Ensure enum value is stored
+            status_entry.last_updated = datetime.utcnow()
+
+            # Only update item counts and ratios if the status is a 'success' type
+            if res["status"] in [MailboxStatusEnum.GREEN, MailboxStatusEnum.YELLOW, MailboxStatusEnum.RED]:
+                status_entry.current_items = res.get("current_items", 0)
+                status_entry.max_items = res.get("max_items", 0)
+                status_entry.fill_ratio = res.get("fill_ratio", 0.0)
             else:
-                print(f"Error polling user {res['username']}: {res.get('error')}")
+                # For error/info statuses, reset or set to default values
+                status_entry.current_items = 0
+                status_entry.max_items = 0
+                status_entry.fill_ratio = 0.0
+                print(f"Mailbox polling for user {res['username']} resulted in status: {status_entry.status}. Error: {res.get('error')}")
+
 
         db.commit()
         print(f"Mailbox polling complete for {len(usernames)} users.")

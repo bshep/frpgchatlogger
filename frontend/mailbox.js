@@ -68,18 +68,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (result) {
                 rowClass = getStatusClass(result.status);
-                detailsCell = `<td>${result.current_items} / ${result.max_items} (${(result.fill_ratio * 100).toFixed(1)}%)</td>`;
-                const lastUpdated = new Date(result.last_updated + 'Z'); // Assume UTC
-                lastUpdatedCell = `<td>${lastUpdated.toLocaleString()}</td>`;
+                let detailsMessage = '';
+                let lastUpdatedDisplay = 'N/A';
+
+                switch (result.status) {
+                    case 'GREEN':
+                    case 'YELLOW':
+                    case 'RED':
+                        detailsMessage = `${result.current_items} / ${result.max_items} (${(result.fill_ratio * 100).toFixed(1)}%)`;
+                        const lastUpdated = new Date(result.last_updated + 'Z'); // Assume UTC
+                        lastUpdatedDisplay = lastUpdated.toLocaleString();
+                        break;
+                    case 'USER_NOT_FOUND':
+                        detailsMessage = 'User not found on FarmRPG.';
+                        break;
+                    case 'MAILBOX_ERROR':
+                        detailsMessage = 'Mailbox data not found or parsed incorrectly.';
+                        break;
+                    case 'CONNECTION_ERROR':
+                        detailsMessage = 'Failed to connect to FarmRPG.';
+                        break;
+                    case 'UNKNOWN_ERROR':
+                        detailsMessage = 'An unknown error occurred.';
+                        break;
+                    default:
+                        detailsMessage = 'Waiting for next server update...';
+                }
+                detailsCell = `<td>${detailsMessage}</td>`;
+                lastUpdatedCell = `<td>${lastUpdatedDisplay}</td>`;
+
             } else {
-                rowClass = getStatusClass('UNKNOWN'); // Use a default class for unknown status
+                // This block is for when there's no result for the username at all (e.g., initial load)
+                rowClass = getStatusClass('UNKNOWN_ERROR'); // Default status for truly unknown results
                 detailsCell = '<td>Waiting for next server update...</td>';
                 lastUpdatedCell = '<td>N/A</td>';
             }
 
             row.className = rowClass;
-            row.innerHTML = `<td>${escapeHTML(username)}</td>${detailsCell}${lastUpdatedCell}`;
-            resultsTableBody.appendChild(row);
+            row.innerHTML = `<td>${escapeHTML(username)}</td>${detailsCell}${lastUpdatedCell}`;            resultsTableBody.appendChild(row);
         });
     }
     
@@ -158,7 +184,11 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'GREEN': return 'table-success';
             case 'YELLOW': return 'table-warning';
             case 'RED': return 'table-danger';
-            default: return 'table-secondary'; // For 'Unknown' or other statuses
+            case 'USER_NOT_FOUND': return 'table-secondary'; // Grey for user not found
+            case 'MAILBOX_ERROR': return 'table-info';    // Light blue for mailbox errors
+            case 'CONNECTION_ERROR': return 'table-danger';   // Red for connection issues
+            case 'UNKNOWN_ERROR': return 'table-danger';    // Red for any other unknown errors
+            default: return 'table-secondary';
         }
     }
 

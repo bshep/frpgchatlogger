@@ -5,8 +5,18 @@ from bs4 import BeautifulSoup
 import urllib.parse
 from typing import Dict, Any
 from sqlalchemy.orm import Session
+from enum import Enum
 
 from mailbox_db import UserMailbox
+
+class MailboxStatusEnum(str, Enum):
+    GREEN = "GREEN"
+    YELLOW = "YELLOW"
+    RED = "RED"
+    USER_NOT_FOUND = "USER_NOT_FOUND"
+    MAILBOX_ERROR = "MAILBOX_ERROR" # Renamed from MAILBOX_ID_NOT_FOUND to be more general for parsing issues
+    CONNECTION_ERROR = "CONNECTION_ERROR"
+    UNKNOWN_ERROR = "UNKNOWN_ERROR"
 
 # --- Cache for MBOXID (in-memory for speed) ---
 mboxid_cache: Dict[str, str] = {}
@@ -24,6 +34,8 @@ async def get_mboxid(db: Session, username: str) -> str:
     """
     # 1. Check in-memory cache
     if username in mboxid_cache:
+        if mboxid_cache[username] is None:
+            raise ValueError(f"Mailbox ID not found for user '{username}'.")
         return mboxid_cache[username]
 
     # 2. Check database cache
@@ -43,6 +55,7 @@ async def get_mboxid(db: Session, username: str) -> str:
         
         link = soup.find("a", href=re.compile(r"mailbox\.php\?id=\d+"))
         if not link or not link.get('href'):
+            mboxid_cache[username] = None  # Cache the absence
             raise ValueError(f"Mailbox ID not found for user '{username}'.")
         
         mboxid_match = re.search(r"id=(\d+)", link['href'])
@@ -65,10 +78,28 @@ async def get_mboxid(db: Session, username: str) -> str:
 async def poll_user_mailbox(db: Session, username: str) -> Dict[str, Any]:
     """Polls a single user's mailbox and returns structured data."""
     if not username:
-        return {"username": username, "status": "error", "message": "Empty username provided."}
+        return {"username": username, "status": MailboxStatusEnum.UNKNOWN_ERROR, "message": "Empty username provided."}
 
     try:
-        mboxid = await get_mboxid(db, username)
+        mboxid = None
+        try:
+            mboxid = await get_mboxid(db, username)
+        except ValueError as ve:
+            if "Mailbox ID not found for user" in str(ve):
+                return {"username": username, "status": MailboxStatusEnum.USER_NOT_FOUND, "error": str(ve)}
+            elif "Could not parse Mailbox ID" in str(ve):
+                return {"username": username, "status": MailboxStatusEnum.MAILBOX_ERROR, "error": str(ve)}
+            else:
+                return {"username": username, "status": MailboxStatusEnum.UNKNOWN_ERROR, "error": str(ve)}
+        except ConnectionError as ce:
+            return {"username": username, "status": MailboxStatusEnum.CONNECTION_ERROR, "error": str(ce)}
+        except Exception as e:
+            # Catch any other unexpected errors during mboxid retrieval
+            return {"username": username, "status": MailboxStatusEnum.UNKNOWN_ERROR, "error": str(e)}
+
+        if not mboxid: # Should not happen if exceptions are raised, but as a safeguard
+             return {"username": username, "status": MailboxStatusEnum.UNKNOWN_ERROR, "error": "Mailbox ID could not be retrieved."}
+
         mailbox_url = f"https://farmrpg.com/mailbox.php?id={mboxid}"
         
         response = await asyncio.to_thread(requests.get, mailbox_url, cookies=cookies, timeout=10)
@@ -77,11 +108,13 @@ async def poll_user_mailbox(db: Session, username: str) -> Dict[str, Any]:
         
         status_span = soup.find("span", id=re.compile(r"\d+-inmailbox"))
         if not status_span:
-            raise ValueError(f"Could not find item count for user '{username}'.")
+            # This means the mailbox page loaded, but the expected element was not found.
+            # This could be due to a change in FarmRPG's HTML structure or an invalid mboxid that still loads a page.
+            return {"username": username, "status": MailboxStatusEnum.MAILBOX_ERROR, "error": f"Could not find item count for user '{username}' (mboxid: {mboxid}). HTML structure might have changed or invalid mboxid."}
             
         parts = status_span.parent.text.split('/')
         if len(parts) != 2:
-            raise ValueError(f"Could not parse item count for user '{username}'.")
+            return {"username": username, "status": MailboxStatusEnum.MAILBOX_ERROR, "error": f"Could not parse item count for user '{username}' (mboxid: {mboxid}). HTML structure might have changed or invalid parsing."}
             
         current_items = int(parts[0].strip().replace(',', ''))
         max_items = int(parts[1].strip().replace(',', ''))
@@ -90,12 +123,12 @@ async def poll_user_mailbox(db: Session, username: str) -> Dict[str, Any]:
         is_open = (max_items - current_items > 100) or (max_items > 0 and current_items / max_items <= 0.5)
         
         if not is_open:
-            color = "RED"
+            color = MailboxStatusEnum.RED
         else:
             if fill_ratio <= 0.1:
-                color = "GREEN"
+                color = MailboxStatusEnum.GREEN
             else:
-                color = "YELLOW"
+                color = MailboxStatusEnum.YELLOW
                 
         return {
             "username": username,
@@ -106,7 +139,10 @@ async def poll_user_mailbox(db: Session, username: str) -> Dict[str, Any]:
             "error": None
         }
         
+    except requests.RequestException as e:
+        db.rollback() # Rollback any potential db changes from get_mboxid if polling fails
+        return {"username": username, "status": MailboxStatusEnum.CONNECTION_ERROR, "error": str(e)}
     except Exception as e:
         db.rollback() # Rollback any potential db changes from get_mboxid if polling fails
-        return {"username": username, "status": "error", "error": str(e)}
+        return {"username": username, "status": MailboxStatusEnum.UNKNOWN_ERROR, "error": str(e)}
 
