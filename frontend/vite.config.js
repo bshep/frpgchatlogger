@@ -8,6 +8,7 @@ export default defineConfig({
         beta: 'beta.html', // Your new beta page entry point
         admin: 'admin.html', // Admin Page
         analysis: 'analysis.html', // Analysis Page
+        mailbox: 'mailbox.html', // Analysis Page
       },
     },
     sourceMap: true, // Enable source maps for easier debugging

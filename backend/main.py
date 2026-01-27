@@ -22,20 +22,17 @@ from pydantic import BaseModel
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, union_all, func
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
+from mailbox_monitor import router as mailbox_router
+from dependencies import (
+    get_current_user, get_current_user_optional, is_user_allowed, is_user_admin,
+    get_admin_user, is_user_analysis_allowed, get_analysis_user,
+    get_config, set_config, chicago_tz, encrypt, SESSION_COOKIE_NAME
+)
+from models import (Base, Message, MessageArchive, Config, Mention, DiscordUser, PersistentSession, get_db)
+from schemas import (MessageModel, MentionModel, ConfigModel, AnalysisRequest, AuthStatusModel)
+
 # --- Threading Lock for Database Writes ---
 db_write_lock = threading.Lock()
-
-# --- Environment and Encryption Setup ---
-ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
-if not ENCRYPTION_KEY:
-    raise RuntimeError("ENCRYPTION_KEY environment variable not set. Generate one using: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"")
-fernet = Fernet(ENCRYPTION_KEY.encode())
-
-def encrypt(data: str) -> str:
-    return fernet.encrypt(data.encode()).decode()
-
-def decrypt(token: str) -> str:
-    return fernet.decrypt(token.encode()).decode()
 
 # --- Database Configuration ---
 DATABASE_URL = "sqlite:///./chatlog.db"
@@ -43,106 +40,10 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- SQLAlchemy Models ---
-class Message(Base):
-    __tablename__ = "messages"
-    id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime, index=True)
-    username = Column(String, index=True)
-    message_html = Column(String)
-    channel = Column(String, default="trade", index=True)
-
-class MessageArchive(Base):
-    __tablename__ = "messages_archive"
-    id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime, index=True)
-    username = Column(String, index=True)
-    message_html = Column(String)
-    channel = Column(String, index=True)
-
-
-class Config(Base):
-    __tablename__ = "config"
-    id = Column(Integer, primary_key=True, index=True)
-    key = Column(String, unique=True, index=True)
-    value = Column(String)
-
-class Mention(Base):
-    __tablename__ = "mentions"
-    id = Column(Integer, primary_key=True, index=True)
-    message_id = Column(Integer, index=True)
-    mentioned_user = Column(String, index=True)
-    message_html = Column(String)
-    timestamp = Column(DateTime, index=True)
-    read = Column(Boolean, default=False)
-    is_hidden = Column(Boolean, default=False)
-    channel = Column(String, default="trade")
-
-class DiscordUser(Base):
-    __tablename__ = "discord_users"
-    id = Column(String, primary_key=True, index=True) # Discord User ID
-    username = Column(String, nullable=False)
-    discriminator = Column(String, nullable=False)
-    avatar = Column(String, nullable=True)
-    encrypted_access_token = Column(String, nullable=False)
-    encrypted_refresh_token = Column(String, nullable=False)
-    token_expiry = Column(DateTime, nullable=False)
-    guilds_data = Column(String) # Store as JSON string
-
-class PersistentSession(Base):
-    __tablename__ = "persistent_sessions"
-    id = Column(Integer, primary_key=True, index=True)
-    session_token = Column(String, unique=True, index=True, nullable=False)
-    discord_id = Column(String, index=True, nullable=False)
-    expiry_date = Column(DateTime, nullable=False, index=True)
-
-# --- Pydantic Models ---
-class MessageModel(BaseModel):
-    id: int
-    timestamp: datetime
-    username: str
-    message_html: str
-    channel: str
-    class Config:
-        from_attributes = True
-
-class MentionModel(BaseModel):
-    id: int
-    message_id: int
-    mentioned_user: str
-    message_html: str
-    timestamp: datetime
-    read: bool
-    is_hidden: bool
-    channel: str
-    class Config:
-        from_attributes = True
-
-class ConfigModel(BaseModel):
-    key: str
-    value: str
-
-class GuildModel(BaseModel):
-    id: str
-    name: str
-    icon: Optional[str]
-    owner: bool
-    permissions: str
-
-class UserModel(BaseModel):
-    id: str
-    username: str
-    avatar: Optional[str]
-    guilds: List[GuildModel]
-
-class AuthStatusModel(BaseModel):
-    username: str
-    is_allowed: bool
-    is_admin: bool
-    is_analysis_allowed: bool
 
 # --- FastAPI App Setup ---
 app = FastAPI()
+app.include_router(mailbox_router)
 
 # CORS Middleware
 origins = ["http://localhost:5173"]
@@ -153,32 +54,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-SESSION_COOKIE_NAME = "frpg_chatterbot_session"
-
-# --- Database Dependency ---
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-def get_config(db: Session, key: str, default: Optional[str] = None) -> Optional[str]:
-    config_item = db.query(Config).filter(Config.key == key).first()
-    return config_item.value if config_item else default
-
-def set_config(db: Session, key: str, value: str):
-    with db_write_lock:
-        config_item = db.query(Config).filter(Config.key == key).first()
-        if config_item:
-            config_item.value = value
-        else:
-            db.add(Config(key=key, value=value))
-        db.commit()
-
-# Define Chicago timezone
-chicago_tz = pytz.timezone('America/Chicago')
-
 # --- Background Tasks ---
 def parse_single_channel_log(db: Session, channel_to_parse: str):
     """
@@ -500,120 +375,6 @@ def startup_event():
             set_config(db, key, value)
     db.close()
 
-# --- Authentication / Authorization Helpers ---
-def is_user_allowed(user: DiscordUser, db: Session) -> bool:
-    """Checks if a user is in the allowed users list or in an allowed guild."""
-    # --- Dev Mode Auth Bypass ---
-    if os.getenv("DEV_MODE_BYPASS_AUTH", "false").lower() == "true":
-        return True
-    # --- End Dev Mode Auth Bypass ---
-    if not user:
-        return False
-
-    allowed_users_str = get_config(db, "allowed_users", "")
-    allowed_guilds_str = get_config(db, "allowed_guilds", "")
-    
-    allowed_users = set(u.strip() for u in allowed_users_str.split(',') if u.strip())
-    allowed_guilds = set(g.strip() for g in allowed_guilds_str.split(',') if g.strip())
-
-    # 1. Check if user's ID is in the allowed list
-    if user.id in allowed_users:
-        return True
-
-    # 2. Check if any of the user's guilds are in the allowed list
-    user_guilds = json.loads(user.guilds_data)
-    user_guild_ids = {guild['id'] for guild in user_guilds}
-    if allowed_guilds.intersection(user_guild_ids):
-        return True
-    
-    return False
-
-def is_user_admin(user: DiscordUser, db: Session) -> bool:
-    """Checks if a user is in the admin users list."""
-    # --- Dev Mode Auth Bypass ---
-    if os.getenv("DEV_MODE_BYPASS_AUTH", "false").lower() == "true":
-        return True
-    # --- End Dev Mode Auth Bypass ---
-    if not user:
-        return True
-
-    admin_users_str = get_config(db, "admin_users", "")
-    admin_users = set(u.strip() for u in admin_users_str.split(',') if u.strip())
-
-    return user.id in admin_users
-
-def is_user_analysis_allowed(user: DiscordUser, db: Session) -> bool:
-    """Checks if a user is an admin or in the analysis-specific allow lists."""
-    if is_user_admin(user, db):
-        return True
-
-    analysis_users_str = get_config(db, "analysis_allowed_users", "")
-    analysis_guilds_str = get_config(db, "analysis_allowed_guilds", "")
-    
-    analysis_users = set(u.strip() for u in analysis_users_str.split(',') if u.strip())
-    analysis_guilds = set(g.strip() for g in analysis_guilds_str.split(',') if g.strip())
-
-    if user.id in analysis_users:
-        return True
-
-    user_guilds = json.loads(user.guilds_data)
-    user_guild_ids = {guild['id'] for guild in user_guilds}
-    if analysis_guilds.intersection(user_guild_ids):
-        return True
-    
-    return False
-
-async def get_current_user_optional(request: Request, db: Session = Depends(get_db)) -> Optional[DiscordUser]:
-    """Dependency to get the current user if a valid session exists, otherwise returns None."""
-    # --- Dev Mode Auth Bypass ---
-    if os.getenv("DEV_MODE_BYPASS_AUTH", "false").lower() == "true":
-        print("--- DEV MODE: Bypassing authentication. Returning mock user. ---")
-        return DiscordUser(
-            id="123456789",
-            username="DevUser",
-            discriminator="0000",
-            avatar=None,
-            encrypted_access_token="dummy_token",
-            encrypted_refresh_token="dummy_token",
-            token_expiry=datetime.now(timezone.utc) + timedelta(days=1),
-            guilds_data='[]' # No guilds by default
-        )
-    # --- End Dev Mode Auth Bypass ---
-    session_token = request.cookies.get(SESSION_COOKIE_NAME)
-    if not session_token:
-        return None
-
-    session = db.query(PersistentSession).filter(PersistentSession.session_token == session_token).first()
-    if not session or session.expiry_date.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
-        if session:
-            db.delete(session)
-            db.commit()
-        return None
-
-    user = db.query(DiscordUser).filter(DiscordUser.id == session.discord_id).first()
-    if not user:
-        return None
-    
-    return user
-
-async def get_current_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
-    user = await get_current_user_optional(request, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return user
-
-async def get_admin_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
-    user = await get_current_user(request, db)
-    if not is_user_admin(user, db):
-        raise HTTPException(status_code=403, detail="You are not authorized to access this page.")
-    return user
-
-async def get_analysis_user(request: Request, db: Session = Depends(get_db)) -> DiscordUser:
-    user = await get_current_user(request, db)
-    if not is_user_analysis_allowed(user, db):
-        raise HTTPException(status_code=403, detail="You are not authorized to access this feature.")
-    return user
-
 # --- API Endpoints ---
 
 @app.get("/api/messages", response_model=List[MessageModel])
@@ -748,10 +509,6 @@ async def get_chat_mods(analysis_user: DiscordUser = Depends(get_analysis_user))
 @app.get("/analysis.html")
 async def get_analysis_page(current_user: DiscordUser = Depends(get_analysis_user)):
     return FileResponse("frontend/analysis.html")
-
-class AnalysisRequest(BaseModel):
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
 
 @app.post("/api/trigger-analysis")
 async def trigger_analysis(

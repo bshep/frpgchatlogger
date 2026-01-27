@@ -1,5 +1,6 @@
 import time
-from datetime import datetime, timedelta
+import asyncio
+from datetime import datetime, timedelta,UTC
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -15,6 +16,10 @@ from main import (
     deduplicate_messages,
     run_migrations
 )
+from mailbox_db import SessionLocal as MailboxSessionLocal, UserMonitoringPreference, MailboxStatus
+from farmrpg_poller import poll_user_mailbox
+import mailbox_db
+
 
 def check_for_config_changes(scheduler):
     """
@@ -38,12 +43,64 @@ def check_for_config_changes(scheduler):
         # Use modify_job to change the trigger of the existing job
         scheduler.modify_job("log_parsing", trigger=IntervalTrigger(seconds=new_interval))
 
+def scheduled_mailbox_polling():
+    """
+    Scheduled job to poll mailboxes of monitored users and update the database.
+    """
+    print("Running scheduled mailbox polling...")
+    db = MailboxSessionLocal()
+    try:
+        # Get all unique usernames from UserMonitoringPreference
+        usernames_to_poll = db.query(UserMonitoringPreference.username).distinct().all()
+        usernames = [user[0] for user in usernames_to_poll]
+        
+        if not usernames:
+            print("No monitored users to poll.")
+            db.close()
+            return
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            results = loop.run_until_complete(asyncio.gather(*[poll_user_mailbox(db, u) for u in usernames]))
+        finally:
+            loop.close()
+
+        for res in results:
+            print(res)
+            if res.get("status") != "error":
+                status_entry = db.query(MailboxStatus).filter(MailboxStatus.username == res["username"]).first()
+                if not status_entry:
+                    status_entry = MailboxStatus(username=res["username"])
+                    db.add(status_entry)
+                
+                status_entry.status = res["status"]
+                status_entry.current_items = res["current_items"]
+                status_entry.max_items = res["max_items"]
+                status_entry.fill_ratio = res["fill_ratio"]
+                status_entry.last_updated = datetime.now(UTC)
+            else:
+                print(f"Error polling user {res['username']}: {res.get('error')}")
+
+        db.commit()
+        print(f"Mailbox polling complete for {len(usernames)} users.")
+
+    except Exception as e:
+        print(f"An error occurred during scheduled mailbox polling: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def main():
     print("Initializing scheduler...")
 
     # Run startup tasks that were in the main app's startup
     Base.metadata.create_all(bind=engine)
     run_migrations(engine)
+
+    # Make sure mailbox DB and tables are created
+    mailbox_db.create_db_and_tables()
 
     db = SessionLocal()
     if not get_config(db, "channels_to_track"):
@@ -77,14 +134,16 @@ def main():
 
     scheduler = BackgroundScheduler()
     # Add jobs
-    scheduler.add_job(scheduled_log_parsing, 'interval', seconds=polling_interval, max_instances=1, id="log_parsing")
-    scheduler.add_job(archive_old_messages, 'interval', hours=1, max_instances=1, id="archive_messages")
-    scheduler.add_job(cleanup_expired_persistent_sessions, 'interval', hours=1, max_instances=1, id="cleanup_sessions")
-    scheduler.add_job(deduplicate_messages, 'interval', seconds=60, max_instances=1, id="deduplicate_messages")
-    scheduler.add_job(check_for_config_changes, 'interval', minutes=1, args=[scheduler], id="config_checker")
+    # scheduler.add_job(scheduled_log_parsing, 'interval', seconds=polling_interval, max_instances=1, id="log_parsing")
+    scheduler.add_job(scheduled_mailbox_polling, 'interval', minutes=1, max_instances=1, id="mailbox_polling")
+    # scheduler.add_job(archive_old_messages, 'interval', hours=1, max_instances=1, id="archive_messages")
+    # scheduler.add_job(cleanup_expired_persistent_sessions, 'interval', hours=1, max_instances=1, id="cleanup_sessions")
+    # scheduler.add_job(deduplicate_messages, 'interval', seconds=60, max_instances=1, id="deduplicate_messages")
+    # scheduler.add_job(check_for_config_changes, 'interval', minutes=1, args=[scheduler], id="config_checker")
 
     # Schedule to run once immediately
-    scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1), id="immediate_log_parsing")
+    # scheduler.add_job(scheduled_log_parsing, 'date', run_date=datetime.now() + timedelta(seconds=1), id="immediate_log_parsing")
+    scheduler.add_job(scheduled_mailbox_polling, 'date', run_date=datetime.now() + timedelta(seconds=2), id="immediate_mailbox_polling")
 
     scheduler.start()
     print("Scheduler started. Press Ctrl+C to exit.")

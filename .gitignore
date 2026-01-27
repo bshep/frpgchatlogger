@@ -51,3 +51,4 @@ chat_analysis.db*
 **/analysis.env
 config/backend.env
 docs/DB Access Key
+backend/mailbox.db
