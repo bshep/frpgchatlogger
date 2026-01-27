@@ -1,6 +1,6 @@
 import time
 import asyncio
-from datetime import datetime, timedelta,UTC
+from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -78,7 +78,7 @@ def scheduled_mailbox_polling():
                 status_entry.current_items = res["current_items"]
                 status_entry.max_items = res["max_items"]
                 status_entry.fill_ratio = res["fill_ratio"]
-                status_entry.last_updated = datetime.now(UTC)
+                status_entry.last_updated = datetime.utcnow()
             else:
                 print(f"Error polling user {res['username']}: {res.get('error')}")
 
