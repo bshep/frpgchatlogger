@@ -55,3 +55,8 @@ class AnalysisRequest(BaseModel):
 
 class UsernamesPayload(BaseModel):
     usernames: List[str]
+
+class AdvancedSearchRequest(BaseModel):
+    terms: List[str]
+    operator: str = "AND" # Default to AND
+    channel: Optional[str] = None

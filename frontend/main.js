@@ -17,10 +17,13 @@ const CHAT_SEARCH_BAR = document.getElementById('chat-search-bar');
 const CHANNEL_VIEW = document.getElementById('channel-view');
 const ADVANCED_SEARCH_VIEW = document.getElementById('advanced-search-view');
 const ADVANCED_SEARCH_FORM = document.getElementById('advanced-search-form');
-const ADVANCED_SEARCH_INPUT = document.getElementById('advanced-search-input');
+
 const ADVANCED_SEARCH_RESULTS = document.getElementById('advanced-search-results');
 const ADVANCED_SEARCH_CHANNEL_FILTER = document.getElementById('advanced-search-channel-filter');
 const ADVANCED_SEARCH_TAB = document.getElementById('advanced-search-tab');
+const SEARCH_PILLS_CONTAINER = document.getElementById('search-pills-container');
+const ADVANCED_SEARCH_TERM_INPUT = document.getElementById('advanced-search-term-input');
+const ADVANCED_SEARCH_OPERATOR = document.getElementById('advanced-search-operator');
 const AUTH_STATUS_MESSAGE = document.getElementById('auth-status-message');
 const DISCORD_LOGIN_BUTTON = document.getElementById('discord-login-button');
 const DISCORD_LOGOUT_BUTTON = document.getElementById('discord-logout-button');
@@ -43,6 +46,7 @@ let currentUserConfig = {
   polling_interval: 5, // in seconds
 };
 let localMentionsCache = [];
+let searchTerms = []; // New state variable
 let chatLogPollingIntervalId;
 let mentionPollingIntervalId;
 
@@ -54,6 +58,7 @@ async function initializeApp() {
   fetchBackendConfig();
   await checkAuthStatus();
   updateUIForAuth();
+  renderSearchPills(); // Add this line
   
   // Initial data fetch and polling
   fetchMentions();
@@ -91,7 +96,9 @@ function handleMessageContentClick(event) {
         advancedSearchTab.click();
       }
       
-      ADVANCED_SEARCH_INPUT.value = searchTerm;
+      // Add the searchTerm to the pills and trigger search
+      searchTerms = [searchTerm]; // Overwrite existing terms with new search
+      renderSearchPills();
       if (ADVANCED_SEARCH_FORM.requestSubmit) {
         ADVANCED_SEARCH_FORM.requestSubmit();
       } else {
@@ -152,6 +159,8 @@ function addEventListeners() {
   CHAT_SEARCH_BAR.addEventListener('input', applyChatFilter);
   CHANNEL_TABS.addEventListener('click', handleTabClick);
   ADVANCED_SEARCH_FORM.addEventListener('submit', handleAdvancedSearch);
+  ADVANCED_SEARCH_TERM_INPUT.addEventListener('keydown', handleSearchTermInput); // New listener
+  SEARCH_PILLS_CONTAINER.addEventListener('click', handlePillClick); // New listener for removing pills
   CONFIG_FORM.addEventListener('submit', handleConfigFormSubmit);
   DISCORD_LOGOUT_BUTTON.addEventListener('click', logout);
   MENTIONS_LOG_ELEMENT.addEventListener('click', handleMentionsClick);
@@ -300,17 +309,33 @@ function handleTabClick(e) {
 
 async function handleAdvancedSearch(e) {
   e.preventDefault();
-  const query = ADVANCED_SEARCH_INPUT.value;
+  
+  // Ensure any pending term in the input field is added
+  const pendingTerm = ADVANCED_SEARCH_TERM_INPUT.value.trim();
+  if (pendingTerm && !searchTerms.includes(pendingTerm)) {
+    searchTerms.push(pendingTerm);
+    ADVANCED_SEARCH_TERM_INPUT.value = '';
+    renderSearchPills();
+  }
+
+  if (searchTerms.length === 0) {
+    ADVANCED_SEARCH_RESULTS.innerHTML = '<p class="text-center">Please enter at least one search term.</p>';
+    return;
+  }
+
   const channel = ADVANCED_SEARCH_CHANNEL_FILTER.value;
-  if (!query) return;
+  const operator = ADVANCED_SEARCH_OPERATOR.value;
 
   ADVANCED_SEARCH_RESULTS.innerHTML = '<p class="text-center">Searching...</p>';
   try {
-    let url = `${BACKEND_URL}/api/search?q=${encodeURIComponent(query)}`;
-    if (channel) {
-      url += `&channel=${encodeURIComponent(channel)}`;
-    }
-    const response = await fetch(url);
+    const response = await fetch(`${BACKEND_URL}/api/search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ terms: searchTerms, operator: operator, channel: channel }),
+    });
+
     if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
             throw new Error("You are not authorized to perform this search.");
@@ -568,6 +593,49 @@ async function handleMentionsClick(e) {
         alert('Failed to mark mention as read.');
       }
   }
+}
+
+// --- New functions for pill management ---
+function handleSearchTermInput(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    if (e.shiftKey) {
+      ADVANCED_SEARCH_FORM.requestSubmit();
+      return;
+    }
+    e.preventDefault(); // Prevent form submission or comma in text
+    const term = ADVANCED_SEARCH_TERM_INPUT.value.trim();
+    if (term && !searchTerms.includes(term)) {
+      searchTerms.push(term);
+      ADVANCED_SEARCH_TERM_INPUT.value = ''; // Clear input
+      renderSearchPills();
+    }
+  }
+}
+
+function handlePillClick(e) {
+  if (e.target.classList.contains('remove-pill-btn')) {
+    const termToRemove = e.target.dataset.term;
+    searchTerms = searchTerms.filter(term => term !== termToRemove);
+    renderSearchPills();
+  }
+}
+
+function renderSearchPills() {
+  // Clear existing pills but keep the input field
+  const currentInput = ADVANCED_SEARCH_TERM_INPUT.value; // Store current input value
+  SEARCH_PILLS_CONTAINER.innerHTML = ''; // Clear all children
+
+  searchTerms.forEach(term => {
+    const pill = document.createElement('span');
+    pill.classList.add('badge', 'bg-primary', 'me-2', 'mb-1');
+    pill.innerHTML = `${term} <button type="button" class="btn-close btn-close-white ms-1 remove-pill-btn" aria-label="Remove" data-term="${term}"></button>`;
+    SEARCH_PILLS_CONTAINER.appendChild(pill);
+  });
+
+  // Re-add the input field at the end
+  SEARCH_PILLS_CONTAINER.appendChild(ADVANCED_SEARCH_TERM_INPUT);
+  ADVANCED_SEARCH_TERM_INPUT.value = currentInput; // Restore input value
+  ADVANCED_SEARCH_TERM_INPUT.focus(); // Keep focus on the input field
 }
 
 // --- Polling ---

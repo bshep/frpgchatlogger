@@ -19,7 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, union_all, func
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine, inspect, text, union_all, func, and_, or_
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from mailbox_monitor import router as mailbox_router
@@ -29,7 +29,7 @@ from dependencies import (
     get_config, set_config, chicago_tz, encrypt, SESSION_COOKIE_NAME
 )
 from models import (Base, Message, MessageArchive, Config, Mention, DiscordUser, PersistentSession, get_db)
-from schemas import (MessageModel, MentionModel, ConfigModel, AnalysisRequest, AuthStatusModel)
+from schemas import (MessageModel, MentionModel, ConfigModel, AnalysisRequest, AuthStatusModel, AdvancedSearchRequest)
 
 # --- Threading Lock for Database Writes ---
 db_write_lock = threading.Lock()
@@ -389,10 +389,9 @@ def get_messages(
     messages = db.query(Message).filter(Message.channel == channel).order_by(Message.timestamp.desc()).limit(limit).all()
     return messages
 
-@app.get("/api/search", response_model=List[MessageModel])
+@app.post("/api/search", response_model=List[MessageModel])
 def search_messages(
-    q: str, 
-    channel: Optional[str] = None, 
+    request: AdvancedSearchRequest, 
     db: Session = Depends(get_db),
     current_user: DiscordUser = Depends(get_current_user)
 ):
@@ -400,29 +399,38 @@ def search_messages(
     if not is_user_allowed(current_user, db):
         raise HTTPException(status_code=403, detail="You are not authorized to use the search feature.")
 
-    if not q:
+    if not request.terms:
         return []
 
-    # Define the filter condition
-    q_filter = Message.message_html.ilike(f"%{q}%")
-    
+    # Build filter conditions for each term
+    term_filters_recent = []
+    term_filters_archive = []
+    for term in request.terms:
+        term_filters_recent.append(Message.message_html.ilike(f"%{term}%"))
+        term_filters_archive.append(MessageArchive.message_html.ilike(f"%{term}%"))
+
+    # Combine term filters based on operator
+    if request.operator.upper() == "AND":
+        combined_term_filter_recent = and_(*term_filters_recent)
+        combined_term_filter_archive = and_(*term_filters_archive)
+    else: # Default to OR
+        combined_term_filter_recent = or_(*term_filters_recent)
+        combined_term_filter_archive = or_(*term_filters_archive)
+
     # Query for recent messages
-    recent_query = db.query(Message).filter(q_filter)
-    if channel:
-        recent_query = recent_query.filter(Message.channel == channel)
+    recent_query = db.query(Message).filter(combined_term_filter_recent)
+    if request.channel:
+        recent_query = recent_query.filter(Message.channel == request.channel)
 
     # Query for archived messages
-    archive_query = db.query(MessageArchive).filter(MessageArchive.message_html.ilike(f"%{q}%"))
-    if channel:
-        archive_query = archive_query.filter(MessageArchive.channel == channel)
+    archive_query = db.query(MessageArchive).filter(combined_term_filter_archive)
+    if request.channel:
+        archive_query = archive_query.filter(MessageArchive.channel == request.channel)
     
     # Combine them
-    # Note: Using python union is simpler here than SQL union for combining two lists of model objects
     combined_results = recent_query.all() + archive_query.all()
     
     # Sort the combined list in Python
-    # This is less efficient than a DB order_by on a UNION, but simpler to implement
-    # and acceptable for a moderate number of results (limited to 500 total).
     combined_results.sort(key=lambda x: x.timestamp, reverse=True)
     
     # Limit the final result set

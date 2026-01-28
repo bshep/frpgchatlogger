@@ -45,7 +45,16 @@
           <div id="advanced-search-view" style="display: none;">
             <form id="advanced-search-form" class="mb-3">
               <div class="input-group">
-                <input type="text" id="advanced-search-input" class="form-control" placeholder="Search entire chat history...">
+                <div id="search-pills-container" class="form-control d-flex flex-wrap align-items-center me-2" style="flex-grow: 1;">
+                    <!-- Search pills will be inserted here by JavaScript -->
+                    <input type="text" id="advanced-search-term-input" class="form-control border-0 p-0 me-2" placeholder="Add search term..." style="min-width: 150px; flex-grow: 1;">
+                </div>
+
+                <select class="form-select" id="advanced-search-operator" style="max-width: 80px;">
+                  <option value="AND">AND</option>
+                  <option value="OR">OR</option>
+                </select>
+
                 <select class="form-select" id="advanced-search-channel-filter" style="max-width: 150px;">
                   <option selected value="">All Channels</option>
                   <option value="trade">Trade</option>
