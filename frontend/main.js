@@ -23,7 +23,8 @@ const ADVANCED_SEARCH_CHANNEL_FILTER = document.getElementById('advanced-search-
 const ADVANCED_SEARCH_TAB = document.getElementById('advanced-search-tab');
 const SEARCH_PILLS_CONTAINER = document.getElementById('search-pills-container');
 const ADVANCED_SEARCH_TERM_INPUT = document.getElementById('advanced-search-term-input');
-const ADVANCED_SEARCH_OPERATOR = document.getElementById('advanced-search-operator');
+const ADVANCED_SEARCH_OPERATOR_PILL = document.getElementById('advanced-search-operator-pill'); // New reference
+const SEARCH_TERMS_DYNAMIC_CONTAINER = document.getElementById('search-terms-dynamic-container'); // New reference
 const AUTH_STATUS_MESSAGE = document.getElementById('auth-status-message');
 const DISCORD_LOGIN_BUTTON = document.getElementById('discord-login-button');
 const DISCORD_LOGOUT_BUTTON = document.getElementById('discord-logout-button');
@@ -161,6 +162,7 @@ function addEventListeners() {
   ADVANCED_SEARCH_FORM.addEventListener('submit', handleAdvancedSearch);
   ADVANCED_SEARCH_TERM_INPUT.addEventListener('keydown', handleSearchTermInput); // New listener
   SEARCH_PILLS_CONTAINER.addEventListener('click', handlePillClick); // New listener for removing pills
+  ADVANCED_SEARCH_OPERATOR_PILL.addEventListener('click', handleOperatorPillClick); // New listener
   CONFIG_FORM.addEventListener('submit', handleConfigFormSubmit);
   DISCORD_LOGOUT_BUTTON.addEventListener('click', logout);
   MENTIONS_LOG_ELEMENT.addEventListener('click', handleMentionsClick);
@@ -324,7 +326,7 @@ async function handleAdvancedSearch(e) {
   }
 
   const channel = ADVANCED_SEARCH_CHANNEL_FILTER.value;
-  const operator = ADVANCED_SEARCH_OPERATOR.value;
+  const operator = ADVANCED_SEARCH_OPERATOR_PILL.textContent;
 
   ADVANCED_SEARCH_RESULTS.innerHTML = '<p class="text-center">Searching...</p>';
   try {
@@ -620,20 +622,25 @@ function handlePillClick(e) {
   }
 }
 
+function handleOperatorPillClick() {
+  if (ADVANCED_SEARCH_OPERATOR_PILL.textContent === 'AND') {
+    ADVANCED_SEARCH_OPERATOR_PILL.textContent = 'OR';
+  } else {
+    ADVANCED_SEARCH_OPERATOR_PILL.textContent = 'AND';
+  }
+}
+
 function renderSearchPills() {
-  // Clear existing pills but keep the input field
   const currentInput = ADVANCED_SEARCH_TERM_INPUT.value; // Store current input value
-  SEARCH_PILLS_CONTAINER.innerHTML = ''; // Clear all children
+  SEARCH_TERMS_DYNAMIC_CONTAINER.innerHTML = ''; // Clear only the dynamic container
 
   searchTerms.forEach(term => {
     const pill = document.createElement('span');
     pill.classList.add('badge', 'bg-primary', 'me-2', 'mb-1');
     pill.innerHTML = `${term} <button type="button" class="btn-close btn-close-white ms-1 remove-pill-btn" aria-label="Remove" data-term="${term}"></button>`;
-    SEARCH_PILLS_CONTAINER.appendChild(pill);
+    SEARCH_TERMS_DYNAMIC_CONTAINER.appendChild(pill); // Append to dynamic container
   });
 
-  // Re-add the input field at the end
-  SEARCH_PILLS_CONTAINER.appendChild(ADVANCED_SEARCH_TERM_INPUT);
   ADVANCED_SEARCH_TERM_INPUT.value = currentInput; // Restore input value
   ADVANCED_SEARCH_TERM_INPUT.focus(); // Keep focus on the input field
 }

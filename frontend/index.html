@@ -46,14 +46,12 @@
             <form id="advanced-search-form" class="mb-3">
               <div class="input-group">
                 <div id="search-pills-container" class="form-control d-flex flex-wrap align-items-center me-2" style="flex-grow: 1;">
-                    <!-- Search pills will be inserted here by JavaScript -->
-                    <input type="text" id="advanced-search-term-input" class="form-control border-0 p-0 me-2" placeholder="Add search term..." style="min-width: 150px; flex-grow: 1;">
-                </div>
-
-                <select class="form-select" id="advanced-search-operator" style="max-width: 80px;">
-                  <option value="AND">AND</option>
-                  <option value="OR">OR</option>
-                </select>
+    <div id="search-terms-dynamic-container" class="d-flex flex-wrap align-items-center">
+        <!-- Search pills will be inserted here by JavaScript -->
+    </div>
+    <input type="text" id="advanced-search-term-input" class="border-0 p-0 me-2" placeholder="Add term..." style="flex-grow: 1; min-width: 0; height: auto; background-color: transparent; outline: none;">
+    <span id="advanced-search-operator-pill" class="badge bg-secondary rounded-pill me-2" style="cursor: pointer;">AND</span>
+</div>
 
                 <select class="form-select" id="advanced-search-channel-filter" style="max-width: 150px;">
                   <option selected value="">All Channels</option>
